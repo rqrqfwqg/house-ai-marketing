@@ -1,0 +1,1152 @@
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "\u623f\u5c4b\u79df\u8d41AI\u8425\u9500\u7cfb\u7edf",
+        "description": "AI\u9a71\u52a8\u7684\u623f\u6e90\u6587\u6848\u751f\u6210\u4e0e\u591a\u5e73\u53f0\u53d1\u5e03\u7cfb\u7edf",
+        "version": "1.0.0"
+    },
+    "paths": {
+        "/api/v1/health": {
+            "get": {
+                "tags": [
+                    "\u7cfb\u7edf"
+                ],
+                "summary": "Health Check",
+                "description": "\u5065\u5eb7\u68c0\u67e5\u63a5\u53e3\n\u7528\u4e8e\u524d\u7aef\u68c0\u6d4b\u540e\u7aef\u670d\u52a1\u662f\u5426\u6b63\u5e38\u8fd0\u884c",
+                "operationId": "health_check_api_v1_health_get",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/houses/upload": {
+            "post": {
+                "tags": [
+                    "\u623f\u6e90\u7ba1\u7406"
+                ],
+                "summary": "Upload House",
+                "description": "\u4e0a\u4f20\u623f\u6e90\u56fe\u7247\u548c\u57fa\u672c\u4fe1\u606f\n\n- **images**: \u623f\u6e90\u56fe\u7247\u6587\u4ef6\u5217\u8868\uff08multipart/form-data\uff09\n- **house_info**: \u623f\u6e90\u57fa\u672c\u4fe1\u606f\uff08JSON\u5b57\u7b26\u4e32\uff0c\u53ef\u9009\uff09\n\n\u8fd4\u56de\uff1a\u521b\u5efa\u7684\u623f\u6e90\u5bf9\u8c61",
+                "operationId": "upload_house_api_v1_houses_upload_post",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "$ref": "#/components/schemas/Body_upload_house_api_v1_houses_upload_post"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HouseResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/houses": {
+            "get": {
+                "tags": [
+                    "\u623f\u6e90\u7ba1\u7406"
+                ],
+                "summary": "Get Houses",
+                "description": "\u83b7\u53d6\u623f\u6e90\u5217\u8868\n\n- **skip**: \u8df3\u8fc7\u8bb0\u5f55\u6570\uff08\u5206\u9875\uff09\n- **limit**: \u8fd4\u56de\u8bb0\u5f55\u6570\uff08\u5206\u9875\uff09\n\n\u8fd4\u56de\uff1a\u623f\u6e90\u5217\u8868\u548c\u603b\u6570",
+                "operationId": "get_houses_api_v1_houses_get",
+                "parameters": [
+                    {
+                        "name": "skip",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 0,
+                            "title": "Skip"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 20,
+                            "title": "Limit"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HouseListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/houses/{house_id}": {
+            "get": {
+                "tags": [
+                    "\u623f\u6e90\u7ba1\u7406"
+                ],
+                "summary": "Get House",
+                "description": "\u83b7\u53d6\u623f\u6e90\u8be6\u60c5\n\n- **house_id**: \u623f\u6e90ID\n\n\u8fd4\u56de\uff1a\u623f\u6e90\u8be6\u7ec6\u4fe1\u606f",
+                "operationId": "get_house_api_v1_houses__house_id__get",
+                "parameters": [
+                    {
+                        "name": "house_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "title": "House Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HouseResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "\u623f\u6e90\u7ba1\u7406"
+                ],
+                "summary": "Delete House",
+                "description": "\u5220\u9664\u623f\u6e90\n\n- **house_id**: \u623f\u6e90ID\n\n\u8fd4\u56de\uff1a204 No Content",
+                "operationId": "delete_house_api_v1_houses__house_id__delete",
+                "parameters": [
+                    {
+                        "name": "house_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "title": "House Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Successful Response"
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/scripts/generate": {
+            "post": {
+                "tags": [
+                    "\u6587\u6848\u751f\u6210"
+                ],
+                "summary": "Generate Script",
+                "description": "\u751f\u6210AI\u6587\u6848\n\n- **house_id**: \u623f\u6e90ID\n- **template_style**: \u6a21\u677f\u98ce\u683c\uff08professional/friendly/urgent\uff09\n\n\u8fd4\u56de\uff1a\u751f\u6210\u7684\u6587\u6848\u5bf9\u8c61",
+                "operationId": "generate_script_api_v1_scripts_generate_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ScriptGenerateRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "201": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ScriptResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/scripts/{script_id}": {
+            "get": {
+                "tags": [
+                    "\u6587\u6848\u751f\u6210"
+                ],
+                "summary": "Get Script",
+                "description": "\u83b7\u53d6\u6587\u6848\u8be6\u60c5\n\n- **script_id**: \u6587\u6848ID\n\n\u8fd4\u56de\uff1a\u6587\u6848\u8be6\u7ec6\u4fe1\u606f",
+                "operationId": "get_script_api_v1_scripts__script_id__get",
+                "parameters": [
+                    {
+                        "name": "script_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "title": "Script Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ScriptResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "\u6587\u6848\u751f\u6210"
+                ],
+                "summary": "Update Script",
+                "description": "\u66f4\u65b0\u6587\u6848\uff08\u7f16\u8f91\u540e\u4fdd\u5b58\uff09\n\n- **script_id**: \u6587\u6848ID\n- **request**: \u66f4\u65b0\u5185\u5bb9\uff08title, body, tags\uff09\n\n\u8fd4\u56de\uff1a\u66f4\u65b0\u540e\u7684\u6587\u6848\u5bf9\u8c61",
+                "operationId": "update_script_api_v1_scripts__script_id__put",
+                "parameters": [
+                    {
+                        "name": "script_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "title": "Script Id"
+                        }
+                    }
+                ],
+                "requestBody": {
+                    "required": true,
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/ScriptUpdateRequest"
+                            }
+                        }
+                    }
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ScriptResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/scripts": {
+            "get": {
+                "tags": [
+                    "\u6587\u6848\u751f\u6210"
+                ],
+                "summary": "Get Scripts",
+                "description": "\u83b7\u53d6\u6587\u6848\u5217\u8868\n\n- **house_id**: \u7b5b\u9009\u6307\u5b9a\u623f\u6e90\u7684\u6587\u6848\uff08\u53ef\u9009\uff09\n- **skip**: \u8df3\u8fc7\u8bb0\u5f55\u6570\n- **limit**: \u8fd4\u56de\u8bb0\u5f55\u6570\n\n\u8fd4\u56de\uff1a\u6587\u6848\u5217\u8868\u548c\u603b\u6570",
+                "operationId": "get_scripts_api_v1_scripts_get",
+                "parameters": [
+                    {
+                        "name": "house_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "integer"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "title": "House Id"
+                        }
+                    },
+                    {
+                        "name": "skip",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 0,
+                            "title": "Skip"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 20,
+                            "title": "Limit"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/ScriptListResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/publish/xiaohongshu": {
+            "post": {
+                "tags": [
+                    "\u53d1\u5e03\u7ba1\u7406"
+                ],
+                "summary": "Publish To Xiaohongshu",
+                "description": "\u53d1\u5e03\u6587\u6848\u5230\u5c0f\u7ea2\u4e66\n\n- **script_id**: \u6587\u6848ID\n- **images**: \u56fe\u7247\u8def\u5f84\u5217\u8868\n\n\u8fd4\u56de\uff1a\u53d1\u5e03\u7ed3\u679c",
+                "operationId": "publish_to_xiaohongshu_api_v1_publish_xiaohongshu_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PublishRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PublishResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/publish/wechat": {
+            "post": {
+                "tags": [
+                    "\u53d1\u5e03\u7ba1\u7406"
+                ],
+                "summary": "Create Wechat Draft",
+                "description": "\u521b\u5efa\u516c\u4f17\u53f7\u8349\u7a3f\n\n- **script_id**: \u6587\u6848ID\n- **images**: \u56fe\u7247\u8def\u5f84\u5217\u8868\n\n\u8fd4\u56de\uff1a\u521b\u5efa\u7ed3\u679c",
+                "operationId": "create_wechat_draft_api_v1_publish_wechat_post",
+                "requestBody": {
+                    "content": {
+                        "application/json": {
+                            "schema": {
+                                "$ref": "#/components/schemas/PublishRequest"
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/PublishResponse"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/publish/logs": {
+            "get": {
+                "tags": [
+                    "\u53d1\u5e03\u7ba1\u7406"
+                ],
+                "summary": "Get Publish Logs",
+                "description": "\u83b7\u53d6\u53d1\u5e03\u8bb0\u5f55\n\n- **house_id**: \u7b5b\u9009\u6307\u5b9a\u623f\u6e90\u7684\u8bb0\u5f55\uff08\u53ef\u9009\uff09\n\n\u8fd4\u56de\uff1a\u53d1\u5e03\u8bb0\u5f55\u5217\u8868",
+                "operationId": "get_publish_logs_api_v1_publish_logs_get",
+                "parameters": [
+                    {
+                        "name": "house_id",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "title": "House Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/PublishLogResponse"
+                                    },
+                                    "title": "Response Get Publish Logs Api V1 Publish Logs Get"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/history": {
+            "get": {
+                "tags": [
+                    "\u5386\u53f2\u8bb0\u5f55"
+                ],
+                "summary": "Get History",
+                "description": "\u83b7\u53d6\u5386\u53f2\u8bb0\u5f55\uff08\u6574\u5408\u623f\u6e90\u3001\u6587\u6848\u3001\u53d1\u5e03\u8bb0\u5f55\uff09\n\n- **skip**: \u8df3\u8fc7\u8bb0\u5f55\u6570\n- **limit**: \u8fd4\u56de\u8bb0\u5f55\u6570\n\n\u8fd4\u56de\uff1a\u5386\u53f2\u8bb0\u5f55\u5217\u8868\uff08\u5305\u542b\u623f\u6e90\u3001\u6587\u6848\u3001\u53d1\u5e03\u72b6\u6001\uff09",
+                "operationId": "get_history_api_v1_history_get",
+                "parameters": [
+                    {
+                        "name": "skip",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 0,
+                            "title": "Skip"
+                        }
+                    },
+                    {
+                        "name": "limit",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "type": "integer",
+                            "default": 20,
+                            "title": "Limit"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object"
+                                    },
+                                    "title": "Response Get History Api V1 History Get"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/history/{house_id}": {
+            "delete": {
+                "tags": [
+                    "\u5386\u53f2\u8bb0\u5f55"
+                ],
+                "summary": "Delete History",
+                "description": "\u5220\u9664\u5386\u53f2\u8bb0\u5f55\uff08\u540c\u65f6\u5220\u9664\u623f\u6e90\u3001\u6587\u6848\u3001\u53d1\u5e03\u8bb0\u5f55\uff09\n\n- **house_id**: \u623f\u6e90ID\n\n\u8fd4\u56de\uff1a204 No Content",
+                "operationId": "delete_history_api_v1_history__house_id__delete",
+                "parameters": [
+                    {
+                        "name": "house_id",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "integer",
+                            "title": "House Id"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "Successful Response"
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Body_upload_house_api_v1_houses_upload_post": {
+                "properties": {
+                    "images": {
+                        "items": {
+                            "type": "string",
+                            "format": "binary"
+                        },
+                        "type": "array",
+                        "title": "Images",
+                        "description": "\u623f\u6e90\u56fe\u7247\uff08\u591a\u5f20\uff09"
+                    },
+                    "house_info": {
+                        "type": "string",
+                        "title": "House Info",
+                        "description": "\u623f\u6e90\u4fe1\u606f\uff08JSON\u683c\u5f0f\uff09"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "images"
+                ],
+                "title": "Body_upload_house_api_v1_houses_upload_post"
+            },
+            "HTTPValidationError": {
+                "properties": {
+                    "detail": {
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        },
+                        "type": "array",
+                        "title": "Detail"
+                    }
+                },
+                "type": "object",
+                "title": "HTTPValidationError"
+            },
+            "HouseListResponse": {
+                "properties": {
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/HouseResponse"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    },
+                    "total": {
+                        "type": "integer",
+                        "title": "Total"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "items",
+                    "total"
+                ],
+                "title": "HouseListResponse",
+                "description": "\u623f\u6e90\u5217\u8868\u54cd\u5e94Schema"
+            },
+            "HouseResponse": {
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "title": "Id"
+                    },
+                    "title": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Title"
+                    },
+                    "address": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Address"
+                    },
+                    "rent": {
+                        "anyOf": [
+                            {
+                                "type": "number"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Rent"
+                    },
+                    "rooms": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Rooms"
+                    },
+                    "area": {
+                        "anyOf": [
+                            {
+                                "type": "number"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Area"
+                    },
+                    "floor": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Floor"
+                    },
+                    "tags": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Tags",
+                        "default": []
+                    },
+                    "images": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Images",
+                        "default": []
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Created At"
+                    },
+                    "updated_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Updated At"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "created_at",
+                    "updated_at"
+                ],
+                "title": "HouseResponse",
+                "description": "\u623f\u6e90\u54cd\u5e94Schema\n\u7528\u4e8e\uff1a\u8fd4\u56de\u623f\u6e90\u8be6\u7ec6\u4fe1\u606f\uff08\u5305\u542b\u56fe\u7247\u8def\u5f84\uff09"
+            },
+            "PublishLogResponse": {
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "title": "Id"
+                    },
+                    "house_id": {
+                        "type": "integer",
+                        "title": "House Id"
+                    },
+                    "script_id": {
+                        "type": "integer",
+                        "title": "Script Id"
+                    },
+                    "platform": {
+                        "type": "string",
+                        "title": "Platform"
+                    },
+                    "status": {
+                        "type": "string",
+                        "title": "Status"
+                    },
+                    "error_msg": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Error Msg"
+                    },
+                    "xhs_note_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Xhs Note Id"
+                    },
+                    "wechat_media_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Wechat Media Id"
+                    },
+                    "published_at": {
+                        "anyOf": [
+                            {
+                                "type": "string",
+                                "format": "date-time"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Published At"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Created At"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "house_id",
+                    "script_id",
+                    "platform",
+                    "status",
+                    "created_at"
+                ],
+                "title": "PublishLogResponse",
+                "description": "\u53d1\u5e03\u8bb0\u5f55\u54cd\u5e94Schema"
+            },
+            "PublishRequest": {
+                "properties": {
+                    "script_id": {
+                        "type": "integer",
+                        "title": "Script Id",
+                        "description": "\u6587\u6848ID"
+                    },
+                    "images": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Images",
+                        "description": "\u56fe\u7247\u8def\u5f84\u5217\u8868"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "script_id",
+                    "images"
+                ],
+                "title": "PublishRequest",
+                "description": "\u53d1\u5e03\u8bf7\u6c42Schema\n\u7528\u4e8e\uff1a\u53d1\u5e03\u6587\u6848\u5230\u5404\u5e73\u53f0"
+            },
+            "PublishResponse": {
+                "properties": {
+                    "success": {
+                        "type": "boolean",
+                        "title": "Success"
+                    },
+                    "platform": {
+                        "type": "string",
+                        "title": "Platform"
+                    },
+                    "note_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Note Id"
+                    },
+                    "media_id": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Media Id"
+                    },
+                    "error": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Error"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "success",
+                    "platform"
+                ],
+                "title": "PublishResponse",
+                "description": "\u53d1\u5e03\u54cd\u5e94Schema\n\u7528\u4e8e\uff1a\u8fd4\u56de\u53d1\u5e03\u7ed3\u679c"
+            },
+            "ScriptGenerateRequest": {
+                "properties": {
+                    "house_id": {
+                        "type": "integer",
+                        "title": "House Id",
+                        "description": "\u623f\u6e90ID"
+                    },
+                    "template_style": {
+                        "type": "string",
+                        "title": "Template Style",
+                        "description": "\u6a21\u677f\u98ce\u683c\uff08professional/friendly/urgent\uff09",
+                        "default": "professional"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "house_id"
+                ],
+                "title": "ScriptGenerateRequest",
+                "description": "\u6587\u6848\u751f\u6210\u8bf7\u6c42Schema\n\u7528\u4e8e\uff1a\u8bf7\u6c42AI\u751f\u6210\u6587\u6848"
+            },
+            "ScriptListResponse": {
+                "properties": {
+                    "items": {
+                        "items": {
+                            "$ref": "#/components/schemas/ScriptResponse"
+                        },
+                        "type": "array",
+                        "title": "Items"
+                    },
+                    "total": {
+                        "type": "integer",
+                        "title": "Total"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "items",
+                    "total"
+                ],
+                "title": "ScriptListResponse",
+                "description": "\u6587\u6848\u5217\u8868\u54cd\u5e94Schema"
+            },
+            "ScriptResponse": {
+                "properties": {
+                    "id": {
+                        "type": "integer",
+                        "title": "Id"
+                    },
+                    "house_id": {
+                        "type": "integer",
+                        "title": "House Id"
+                    },
+                    "title": {
+                        "type": "string",
+                        "title": "Title"
+                    },
+                    "body": {
+                        "type": "string",
+                        "title": "Body"
+                    },
+                    "tags": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Tags",
+                        "default": []
+                    },
+                    "platform": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Platform"
+                    },
+                    "template_style": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Template Style"
+                    },
+                    "created_at": {
+                        "type": "string",
+                        "format": "date-time",
+                        "title": "Created At"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "id",
+                    "house_id",
+                    "title",
+                    "body",
+                    "created_at"
+                ],
+                "title": "ScriptResponse",
+                "description": "\u6587\u6848\u54cd\u5e94Schema\n\u7528\u4e8e\uff1a\u8fd4\u56de\u6587\u6848\u8be6\u60c5"
+            },
+            "ScriptUpdateRequest": {
+                "properties": {
+                    "title": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Title",
+                        "description": "\u6587\u6848\u6807\u9898"
+                    },
+                    "body": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Body",
+                        "description": "\u6587\u6848\u6b63\u6587"
+                    },
+                    "tags": {
+                        "anyOf": [
+                            {
+                                "items": {
+                                    "type": "string"
+                                },
+                                "type": "array"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Tags",
+                        "description": "\u6807\u7b7e\u5217\u8868"
+                    }
+                },
+                "type": "object",
+                "title": "ScriptUpdateRequest",
+                "description": "\u6587\u6848\u66f4\u65b0\u8bf7\u6c42Schema\n\u7528\u4e8e\uff1a\u7f16\u8f91\u6587\u6848\u540e\u4fdd\u5b58"
+            },
+            "ValidationError": {
+                "properties": {
+                    "loc": {
+                        "items": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "integer"
+                                }
+                            ]
+                        },
+                        "type": "array",
+                        "title": "Location"
+                    },
+                    "msg": {
+                        "type": "string",
+                        "title": "Message"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Error Type"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "loc",
+                    "msg",
+                    "type"
+                ],
+                "title": "ValidationError"
+            }
+        }
+    }
+}
