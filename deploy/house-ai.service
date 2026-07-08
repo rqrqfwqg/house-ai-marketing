@@ -1,6 +1,12 @@
 [Unit]
 Description=house-ai 后端 (FastAPI)
 After=network.target
+# house-ai 的小红书功能依赖 xiaohongshu-mcp 服务：
+# 用 Wants（非 Requires）表示「尽量一起启动，但 MCP 未起时 house-ai 仍可启动」，
+# 只是小红书二维码/发布功能会返回清晰报错而非泛 500。
+# After 让 MCP 服务先于 house-ai 启动。
+Wants=xiaohongshu-mcp.service
+After=xiaohongshu-mcp.service
 
 [Service]
 Type=simple

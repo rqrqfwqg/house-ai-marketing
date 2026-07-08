@@ -258,3 +258,77 @@ ssh -L 9222:127.0.0.1:9222 user@your-server
 - **独立子域名**：把本文件放进 `/etc/nginx/conf.d/`（或 `sites-enabled/`），`server_name` 设子域名，`nginx -t && systemctl reload nginx`。
 - **同域子路径**：不要单独 include 本 server 块；改为把 `nginx-house-ai.conf` 的 location 粘进 tools-management 现有
   80/443 server，并在该 server 上引用 9.4 的腾讯云证书。
+
+---
+
+## 十、小红书 MCP 服务（必需依赖）
+
+house-ai 后端**不直接驱动浏览器**，而是通过 HTTP 调用一个**独立的外部服务 `xiaohongshu-mcp`**
+（默认地址 `http://localhost:18060`，端点 `/mcp`）来完成小红书登录二维码获取与笔记发布。
+**这是小红书二维码/发布功能的硬依赖**；服务缺失时相关接口会报错，必须在同一台服务器上安装并运行它。
+
+### 10.1 为什么是必需依赖
+
+- `backend/services/xhs_service.py` 的 `XhsService._mcp_call()` 用 `httpx` POST 到
+  `XHS_MCP_URL`（默认 `http://localhost:18060`）。
+- 若 `xiaohongshu-mcp` 未安装/未启动，`/api/v1/publish/xhs-qrcode` 等接口会连不上 18060 端口。
+- 自 v2 起后端已对这类**连接错误做友好包装**：返回清晰中文报错，例如
+  `小红书MCP服务(xiaohongshu-mcp)未启动或不可达，请先在服务器启动该服务（默认地址 http://localhost:18060，命令：xiaohongshu-mcp --headless=true --port :18060）`，
+  而不是晦涩的泛 500（`All connection attempts failed`）。
+
+### 10.2 安装方式（任选其一）
+
+1. **npm 全局安装（推荐）**：
+   ```bash
+   npm install -g xiaohongshu-mcp
+   ```
+   开源地址：https://github.com/xpzouying/xiaohongshu-mcp
+2. **源码编译安装**：
+   ```bash
+   git clone https://github.com/xpzouying/xiaohongshu-mcp
+   cd xiaohongshu-mcp && npm install && npm run build && npm link
+   ```
+3. **Docker（可选）**：参考上游仓库自行容器化，再把 `XHS_MCP_URL` 指向容器地址即可。
+
+### 10.3 启动命令
+
+```bash
+xiaohongshu-mcp --headless=true --port :18060
+```
+
+若 `xiaohongshu-mcp` 不在 `PATH`，先 `which xiaohongshu-mcp` 拿绝对路径，改用绝对路径启动。
+
+### 10.4 systemd 自启
+
+`deploy/xiaohongshu-mcp.service` 已提供 systemd 单元（运行用户 `houseai`、监听 18060、
+`Restart=on-failure`）。注册并自启：
+
+```bash
+cp deploy/xiaohongshu-mcp.service /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now xiaohongshu-mcp
+```
+
+> 该 unit 通过 `After=network.target` 启动；`house-ai.service` 用 `Wants=`（非 `Requires`）
+> 关联它——MCP 没起时 house-ai 仍能启动，只是小红书功能返回上面 10.1 的清晰报错。
+
+### 10.5 腾讯云一键脚本
+
+`deploy/tencent-setup.sh` 在 **5.5 节**已幂等补齐该依赖：检测/安装 node+npm →
+`npm install -g xiaohongshu-mcp`（已装则跳过）→ 注册并自启 `xiaohongshu-mcp.service`。
+若不想开机自启，可注释掉脚本中对应 `systemctl enable --now xiaohongshu-mcp` 两行。
+
+### 10.6 验证
+
+```bash
+# 服务状态（active 即正常）
+systemctl status xiaohongshu-mcp
+
+# 端口/健康检查（服务自带 /health，返回 200 即正常）
+curl -s http://localhost:18060/health
+
+# 接口联调：拿到清晰二维码或明确报错（非泛 500）
+curl -s https://your-domain/house-ai/api/v1/publish/xhs-qrcode
+```
+
+若 `curl` 健康检查返回非 200 或连接失败，说明 MCP 服务未正常启动，请回看 10.2/10.3 排查。

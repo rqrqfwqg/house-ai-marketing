@@ -1,0 +1,49 @@
+# ============================================================
+# 小红书 MCP 服务（house-ai 必需依赖）
+# ------------------------------------------------------------
+# 作用：house-ai 后端不直接驱动浏览器，而是通过 HTTP 调用独立的
+#       xiaohongshu-mcp 服务（默认 http://localhost:18060/mcp）
+#       来完成小红书登录二维码获取与笔记发布。该服务未启动会导致
+#       /api/v1/publish/xhs-qrcode 等接口报错。
+#
+# 安装方式（任选其一，不影响本 unit 本身）：
+#   1) npm 全局安装（推荐）：
+#        npm install -g xiaohongshu-mcp
+#      开源地址：https://github.com/xpzouying/xiaohongshu-mcp
+#   2) 源码编译安装：
+#        git clone https://github.com/xpzouying/xiaohongshu-mcp
+#        cd xiaohongshu-mcp && npm install && npm run build && npm link
+#   3) Docker（可选）：参考上游仓库的 Docker 用法，自行容器化，
+#      再把 XHS_MCP_URL 指向容器地址。
+#
+# 命令路径说明：
+#   若全局安装后 `which xiaohongshu-mcp` 能直接找到，则下方
+#   ExecStart=/usr/bin/env xiaohongshu-mcp ... 即可正常工作。
+#   若命令不在 PATH 中，请先执行 `which xiaohongshu-mcp` 拿到绝对路径，
+#   并把 ExecStart 改为该绝对路径（例如 /usr/local/bin/xiaohongshu-mcp）。
+# ============================================================
+
+[Unit]
+Description=小红书 MCP 服务（house-ai 依赖）
+After=network.target
+
+[Service]
+Type=simple
+# 运行用户：与 house-ai 保持一致，使用专用低权限用户 houseai。
+# 若你的环境没有该用户，可改为 root 或实际运行用户。
+User=houseai
+# 工作目录：设为部署根目录即可，xiaohongshu-mcp 需要写其运行态文件。
+WorkingDirectory=/opt/house-ai
+# 确保能找到 npm 全局安装的 xiaohongshu-mcp（默认落在 /usr/local/bin）。
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+# 启动命令：以无头模式监听 18060 端口。
+# 如不确定全局命令位置，可改用绝对路径：/usr/local/bin/xiaohongshu-mcp --headless=true --port :18060
+ExecStart=/usr/bin/env xiaohongshu-mcp --headless=true --port :18060
+# 进程异常退出后自动拉起，提高可用性。
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

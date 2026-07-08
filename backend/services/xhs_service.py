@@ -21,6 +21,45 @@ class XhsService:
         if not self.mcp_url:
             logger.warning("XHS_MCP_URL未配置，小红书发布功能将不可用")
 
+    @staticmethod
+    def _classify_error(e: Exception) -> str:
+        """
+        将异常分类为可读的中文错误信息。
+
+        重点识别「小红书 MCP 服务(xiaohongshu-mcp)未启动或不可达」这类连接错误，
+        避免向用户暴露晦涩的底层报错（如 All connection attempts failed / Connection refused）。
+        其余异常原样返回，不影响正常 MCP 调用与业务错误透传。
+
+        Args:
+            e: 捕获到的异常对象
+
+        Returns:
+            清晰可读的错误描述字符串
+        """
+        err_text = str(e)
+        is_connection_error = (
+            isinstance(
+                e,
+                (
+                    httpx.ConnectError,
+                    httpx.ConnectTimeout,
+                    httpx.TimeoutException,
+                    httpx.NetworkError,
+                ),
+            )
+            or "All connection attempts failed" in err_text
+            or "Connection refused" in err_text
+            or "Name or service not known" in err_text
+            or "No route to host" in err_text
+        )
+        if is_connection_error:
+            return (
+                "小红书MCP服务(xiaohongshu-mcp)未启动或不可达，"
+                "请先在服务器启动该服务（默认地址 http://localhost:18060，"
+                "命令：xiaohongshu-mcp --headless=true --port :18060）"
+            )
+        return err_text
+
     async def _mcp_call(self, tool_name: str, arguments: dict = None) -> dict:
         """
         MCP 协议调用工具（完整流程：初始化→通知→调用）
@@ -247,7 +286,7 @@ class XhsService:
             }
 
         except Exception as e:
-            error_msg = f"获取登录二维码失败：{str(e)}"
+            error_msg = f"获取登录二维码失败：{self._classify_error(e)}"
             logger.error(error_msg)
             return {
                 "success": False,
@@ -278,7 +317,7 @@ class XhsService:
             logger.error(f"检查登录状态失败：{str(e)}")
             return {
                 "logged_in": False,
-                "error": str(e),
+                "error": self._classify_error(e),
             }
 
     async def publish_note(
@@ -328,7 +367,7 @@ class XhsService:
             }
 
         except Exception as e:
-            error_msg = f"小红书发布失败：{str(e)}"
+            error_msg = f"小红书发布失败：{self._classify_error(e)}"
             logger.error(error_msg)
             return {
                 "success": False,

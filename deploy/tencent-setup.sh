@@ -96,6 +96,50 @@ else
     echo "    （已创建 venv，业务依赖请在上传代码后手动 pip install -r requirements.txt）"
 fi
 
+# ---------- 5.5 安装小红书 MCP 服务（house-ai 必需依赖，幂等） ----------
+# house-ai 的小红书二维码/发布功能依赖独立服务 xiaohongshu-mcp（默认 :18060）。
+# 该服务缺失会被捕获为清晰报错（而非泛 500），但功能不可用，故这里一并补齐。
+echo "==> 检查并安装小红书 MCP 服务依赖 (xiaohongshu-mcp)"
+
+# 5.5.1 确保 node/npm 存在（MCP 是 npm 全局包）
+if command -v node >/dev/null 2>&1 && command -v npm >/dev/null 2>&1; then
+    echo "    node/npm 已存在，跳过安装（node=$(node -v 2>/dev/null)）"
+else
+    echo "==> 安装 nodejs / npm (PKG_MGR=$PKG_MGR)"
+    case "$PKG_MGR" in
+        dnf|yum)
+            "$PKG_MGR" install -y nodejs npm
+            ;;
+        apt)
+            apt-get update
+            apt-get install -y nodejs npm
+            ;;
+        *)
+            echo "!! 无法自动安装 nodejs/npm，请手动安装后重跑（xiaohongshu-mcp 需要 Node.js 环境）。" >&2
+            ;;
+    esac
+fi
+
+# 5.5.2 安装 xiaohongshu-mcp（npm 全局，已装则跳过）
+if command -v xiaohongshu-mcp >/dev/null 2>&1; then
+    echo "    xiaohongshu-mcp 已安装（$(command -v xiaohongshu-mcp)），跳过 npm install"
+else
+    echo "==> npm install -g xiaohongshu-mcp"
+    npm install -g xiaohongshu-mcp || echo "!! xiaohongshu-mcp 安装失败，请手动执行：npm install -g xiaohongshu-mcp" >&2
+fi
+
+# 5.5.3 注册并自启 systemd 单元（deploy/xiaohongshu-mcp.service）
+# 若不想开机自启，可注释掉下面两行；功能仍可用，只是需手动启动。
+if [ -f "$DEPLOY_ROOT/deploy/xiaohongshu-mcp.service" ]; then
+    echo "==> 注册 xiaohongshu-mcp.service 并自启"
+    cp "$DEPLOY_ROOT/deploy/xiaohongshu-mcp.service" /etc/systemd/system/
+    systemctl daemon-reload >/dev/null 2>&1 || true
+    systemctl enable --now xiaohongshu-mcp >/dev/null 2>&1 || \
+        echo "!! xiaohongshu-mcp 自启失败（可能 npm 未装好或命令路径问题），请检查：which xiaohongshu-mcp" >&2
+else
+    echo "!! 未找到 deploy/xiaohongshu-mcp.service，跳过 MCP 服务注册（请确认部署包完整）"
+fi
+
 # ---------- 6. 设置目录属主 ----------
 echo "==> 设置 $DEPLOY_ROOT 属主为 $APP_USER"
 chown -R "$APP_USER:$APP_USER" "$DEPLOY_ROOT"
@@ -131,10 +175,20 @@ echo "==> 启用并启动 nginx"
 systemctl enable nginx >/dev/null 2>&1 || true
 systemctl start nginx >/dev/null 2>&1 || true
 
+# 检查小红书 MCP 服务状态（install 阶段已注册并自启，这里仅提示）
+if systemctl is-enabled --quiet xiaohongshu-mcp 2>/dev/null; then
+    echo "==> xiaohongshu-mcp 服务已注册自启（status: $(systemctl is-active xiaohongshu-mcp 2>/dev/null || echo unknown)）"
+else
+    echo "==> 提示：xiaohongshu-mcp 未注册/未自启，如需小红书功能请执行："
+    echo "      cp deploy/xiaohongshu-mcp.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now xiaohongshu-mcp"
+fi
+
 echo "==> 初始化完成。"
 echo "下一步："
 echo "  1) 在腾讯云 DNSPod 添加解析（DEPLOY.md 9.3）"
 echo "  2) 在腾讯云 SSL 控制台申请免费 DV 证书并下载 Nginx 格式，上传到 $SSL_DIR（DEPLOY.md 9.4）"
 echo "  3) 上传后端/前端代码，pip install 依赖，构建前端"
 echo "  4) 部署 nginx 配置（deploy/nginx-house-ai.conf 或 deploy/nginx-house-ai-tencent.conf），nginx -t && systemctl reload nginx"
-echo "  5) 安装 systemd 单元：cp deploy/house-ai.service /etc/systemd/system/ && systemctl enable --now house-ai"
+echo "  5) 安装 systemd 单元并启动："
+echo "       cp deploy/house-ai.service /etc/systemd/system/ && systemctl daemon-reload && systemctl enable --now house-ai"
+echo "     （小红书 MCP 服务已在本脚本 5.5 节自动注册自启；若不需要可 systemctl disable xiaohongshu-mcp）"
