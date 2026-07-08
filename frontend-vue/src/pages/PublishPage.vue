@@ -56,6 +56,32 @@
       </div>
     </el-card>
 
+    <!-- 公众号账号选择（仅微信平台） -->
+    <el-card v-if="selectedPlatform === 'wechat'" class="section-card" shadow="never">
+      <template #header>
+        <span class="card-title">选择发布账号</span>
+      </template>
+      <el-select
+        v-model="selectedWechatAccountId"
+        placeholder="选择要发布的公众号账号（不选则使用默认账号）"
+        style="width: 100%"
+        clearable
+        :loading="loadingWechatAccounts"
+      >
+        <el-option
+          v-for="acc in wechatAccounts"
+          :key="acc.id"
+          :label="`${acc.name}（${acc.app_id_masked}）`"
+          :value="acc.id"
+        />
+      </el-select>
+      <div v-if="!loadingWechatAccounts && wechatAccounts.length === 0" class="account-hint">
+        暂无启用的公众号账号，请前往
+        <router-link to="/settings/wechat-accounts" class="link">公众号配置</router-link>
+        添加账号。
+      </div>
+    </el-card>
+
     <!-- 发布按钮 -->
     <div class="publish-btn-area">
       <el-button
@@ -135,13 +161,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import XhsQrCodeModal from '@/components/XhsQrCodeModal.vue'
 import { getScript } from '@/api/script'
 import { publish } from '@/api/publish'
-import type { Script, Platform, PublishResponse } from '@/types'
+import { getWechatAccounts } from '@/api/wechatAccount'
+import type { Script, Platform, PublishResponse, WechatAccount } from '@/types'
 
 const route = useRoute()
 const router = useRouter()
@@ -157,6 +184,11 @@ const publishing = ref(false)
 const selectedPlatform = ref<Platform>('xiaohongshu')
 const publishResult = ref<PublishResponse | null>(null)
 const showQrCode = ref(false)
+
+// 公众号账号下拉
+const wechatAccounts = ref<WechatAccount[]>([])
+const selectedWechatAccountId = ref<number | undefined>(undefined)
+const loadingWechatAccounts = ref(false)
 
 const platformLabel = computed(() => {
   return selectedPlatform.value === 'xiaohongshu' ? '小红书' : '微信公众号'
@@ -196,6 +228,36 @@ onMounted(() => {
   }
 })
 
+// 切换平台时按需加载公众号账号
+watch(selectedPlatform, (platform) => {
+  if (platform === 'wechat') {
+    // 切回小红书时清空选择，避免误带账号
+    loadWechatAccounts()
+  } else {
+    selectedWechatAccountId.value = undefined
+  }
+})
+
+async function loadWechatAccounts(): Promise<void> {
+  loadingWechatAccounts.value = true
+  try {
+    const res = await getWechatAccounts(true)
+    wechatAccounts.value = res.items || []
+    if (wechatAccounts.value.length === 0) {
+      ElMessage.warning('暂无启用的公众号账号，请前往「公众号配置」添加')
+    }
+  } catch (error: any) {
+    const msg =
+      error?.response?.data?.detail ||
+      error?.response?.data?.message ||
+      '获取公众号账号失败'
+    ElMessage.warning(`${msg}（请前往「公众号配置」添加账号）`)
+    wechatAccounts.value = []
+  } finally {
+    loadingWechatAccounts.value = false
+  }
+}
+
 async function loadScript(): Promise<void> {
   loading.value = true
   try {
@@ -213,10 +275,16 @@ async function handlePublish(): Promise<void> {
   publishing.value = true
   publishResult.value = null
   try {
-    const result = await publish(selectedPlatform.value, {
+    const payload: { script_id: number; images: string[]; wechat_account_id?: number } = {
       script_id: scriptId.value,
       images: [], // 后端从房源获取图片，此字段由后端处理
-    })
+    }
+    // 仅微信公众号平台随请求发送账号 ID
+    if (selectedPlatform.value === 'wechat') {
+      payload.wechat_account_id = selectedWechatAccountId.value ?? undefined
+    }
+
+    const result = await publish(selectedPlatform.value, payload)
     publishResult.value = result
     if (result.success) {
       ElMessage.success('发布成功！')
@@ -328,6 +396,22 @@ function openEditor(url?: string): void {
   font-size: 11px;
   color: #909399;
   margin-top: 2px;
+}
+
+.account-hint {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 8px;
+  line-height: 1.5;
+}
+
+.link {
+  color: #409eff;
+  text-decoration: none;
+}
+
+.link:hover {
+  text-decoration: underline;
 }
 
 .publish-btn-area {

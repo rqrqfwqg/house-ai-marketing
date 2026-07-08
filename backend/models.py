@@ -13,6 +13,7 @@ from sqlalchemy import (
     DateTime,
     Text,
     JSON,
+    Boolean,
     ForeignKey,
 )
 from sqlalchemy.orm import relationship, Mapped, mapped_column
@@ -122,6 +123,14 @@ class PublishLog(Base):
     xhs_note_id: Mapped[Optional[str]] = mapped_column(String(200), nullable=True, comment="小红书笔记ID")
     wechat_media_id: Mapped[Optional[str]] = mapped_column(String(200), nullable=True, comment="微信公众号素材ID")
 
+    # 多账号关联：发布所发往的公众号账号（历史小红书/旧记录为 NULL）
+    wechat_account_id: Mapped[Optional[int]] = mapped_column(
+        Integer,
+        ForeignKey("wechat_accounts.id", ondelete="SET NULL"),
+        nullable=True,
+        comment="关联公众号账号ID（多账号发布追溯）",
+    )
+
     # 时间戳
     published_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, comment="发布时间")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="创建时间")
@@ -132,3 +141,53 @@ class PublishLog(Base):
 
     def __repr__(self) -> str:
         return f"<PublishLog(id={self.id}, platform={self.platform}, status={self.status})>"
+
+
+class WechatAccount(Base):
+    """
+    公众号多账号配置表模型
+
+    存储：账号名称、AppID（唯一）、AppSecret 密文（Fernet）、备注、启用/禁用、默认标记。
+    AppSecret 明文绝不在本表落库、绝不通过 API 回传前端。
+    """
+    __tablename__ = "wechat_accounts"
+
+    # 主键
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+
+    # 账号基本信息
+    name: Mapped[str] = mapped_column(String(50), nullable=False, comment="账号名称")
+    app_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, unique=True, index=True, comment="AppID（wx 开头）"
+    )
+    app_secret_encrypted: Mapped[str] = mapped_column(
+        Text, nullable=False, comment="AppSecret 密文（Fernet）"
+    )
+    remark: Mapped[Optional[str]] = mapped_column(String(200), nullable=True, comment="备注")
+
+    # 状态标记
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, comment="是否启用")
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, comment="是否默认账号（至多 1 个）")
+
+    # 时间戳
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, comment="创建时间")
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=datetime.utcnow, onupdate=datetime.utcnow, comment="更新时间"
+    )
+
+    def masked_app_id(self) -> str:
+        """
+        返回脱敏后的 AppID（前 4 后 4，中间以 * 填充）。
+
+        示例：``wx1234567890abcdef`` -> ``wx12********cdef``。
+
+        Returns:
+            脱敏字符串；长度过短（<=8）时整体返回 ``****`` 以防泄露。
+        """
+        aid: str = self.app_id or ""
+        if len(aid) <= 8:
+            return "****"
+        return f"{aid[:4]}{'*' * (len(aid) - 8)}{aid[-4:]}"
+
+    def __repr__(self) -> str:
+        return f"<WechatAccount(id={self.id}, name={self.name}, app_id={self.masked_app_id()})>"

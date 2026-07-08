@@ -126,6 +126,9 @@ class PublishRequest(BaseModel):
     """
     script_id: int = Field(..., description="文案ID")
     images: List[str] = Field(..., description="图片路径列表")
+    wechat_account_id: Optional[int] = Field(
+        None, description="目标公众号账号ID（多账号发布选号；为空则回落默认账号或 .env 兜底）"
+    )
 
 
 class PublishResponse(BaseModel):
@@ -160,6 +163,91 @@ class PublishLogResponse(BaseModel):
     model_config = ConfigDict(
         from_attributes=True,
     )
+
+
+# ========== 微信公众号多账号 Schemas ==========
+
+class WechatAccountCreate(BaseModel):
+    """
+    公众号账号新增请求Schema
+
+    安全约束：app_secret 为明文入参，后端入库前加密，绝不回传前端。
+    """
+    name: str = Field(..., min_length=1, max_length=50, description="账号名称")
+    app_id: str = Field(..., description="AppID（wx 开头，唯一）")
+    app_secret: str = Field(..., min_length=1, description="AppSecret（新增时必填）")
+    remark: Optional[str] = Field(None, max_length=200, description="备注")
+    is_active: bool = True
+    is_default: bool = False
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    @field_validator("app_id")
+    @classmethod
+    def _validate_app_id(cls, v: str) -> str:
+        """校验 AppID 必须以 wx 开头且长度合理。"""
+        if not v.startswith("wx"):
+            raise ValueError("AppID 必须以 wx 开头")
+        if not (6 <= len(v) <= 64):
+            raise ValueError("AppID 长度不合法（应为 6-64 个字符）")
+        return v
+
+
+class WechatAccountUpdate(BaseModel):
+    """
+    公众号账号编辑请求Schema
+
+    安全约束：app_secret 为空表示不修改（保留原密文）。
+    """
+    name: Optional[str] = Field(None, min_length=1, max_length=50, description="账号名称")
+    app_id: Optional[str] = Field(None, description="AppID（wx 开头，唯一）")
+    app_secret: Optional[str] = Field(None, description="AppSecret（留空表示不修改）")
+    remark: Optional[str] = Field(None, max_length=200, description="备注")
+    is_active: Optional[bool] = None
+    is_default: Optional[bool] = None
+
+    model_config = ConfigDict(str_strip_whitespace=True)
+
+    @field_validator("app_id")
+    @classmethod
+    def _validate_app_id(cls, v: Optional[str]) -> Optional[str]:
+        if v is None:
+            return v
+        if not v.startswith("wx"):
+            raise ValueError("AppID 必须以 wx 开头")
+        if not (6 <= len(v) <= 64):
+            raise ValueError("AppID 长度不合法（应为 6-64 个字符）")
+        return v
+
+
+class WechatAccountResponse(BaseModel):
+    """
+    公众号账号响应Schema（脱敏）
+
+    安全红线：仅返回 app_id_masked，绝不返回 app_secret 与 app_id 明文。
+    """
+    id: int
+    name: str
+    app_id_masked: str
+    remark: Optional[str] = None
+    is_active: bool
+    is_default: bool
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class WechatAccountListResponse(BaseModel):
+    """公众号账号列表响应Schema。"""
+    items: List[WechatAccountResponse]
+    total: int
+
+
+class WechatTestResponse(BaseModel):
+    """公众号账号连通性测试响应Schema。"""
+    success: bool
+    message: str
 
 
 # ========== 通用响应Schemas ==========

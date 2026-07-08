@@ -32,7 +32,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
-import { Upload, Promotion, Clock } from '@element-plus/icons-vue'
+import { Upload, Promotion, Clock, Setting } from '@element-plus/icons-vue'
 
 const route = useRoute()
 
@@ -40,6 +40,7 @@ const navItems = computed(() => [
   { path: '/upload', label: '上传', icon: Upload },
   { path: '/generate', label: '生成', icon: Promotion },
   { path: '/history', label: '记录', icon: Clock },
+  { path: '/settings/wechat-accounts', label: '设置', icon: Setting },
 ])
 
 function isActive(path: string): boolean {

@@ -1,0 +1,105 @@
+classDiagram
+    direction TB
+
+    class WechatAccount {
+        +int id
+        +str name
+        +str app_id
+        +str app_secret_encrypted
+        +str remark
+        +bool is_active
+        +bool is_default
+        +datetime created_at
+        +datetime updated_at
+        +masked_app_id() str
+    }
+
+    class PublishLog {
+        +int id
+        +int house_id
+        +int script_id
+        +str platform
+        +str status
+        +str error_msg
+        +str xhs_note_id
+        +str wechat_media_id
+        +int wechat_account_id
+        +datetime published_at
+        +datetime created_at
+    }
+
+    class WechatService {
+        -str appid
+        -str appsecret
+        +__init__(app_id, app_secret)
+        +create_draft(title, body, images, tags, highlights) dict
+        -_get_access_token() str
+        -_upload_thumb_image(access_token, image_path) str
+        -_upload_content_image(access_token, image_path) str
+        -_build_html_content(...) str
+    }
+
+    class CryptoUtils {
+        +encrypt_secret(plaintext) str
+        +decrypt_secret(ciphertext) str
+    }
+
+    class WechatAccountRouter {
+        +GET /wechat-accounts
+        +POST /wechat-accounts
+        +PUT /wechat-accounts/{id}
+        +DELETE /wechat-accounts/{id}
+        +POST /wechat-accounts/{id}/test
+        +seed_wechat_accounts_from_env()
+    }
+
+    class PublishRouter {
+        +POST /publish/wechat
+    }
+
+    class WechatAccountCreate {
+        +str name
+        +str app_id
+        +str app_secret
+        +str remark
+        +bool is_active
+        +bool is_default
+    }
+
+    class WechatAccountUpdate {
+        +str name
+        +str app_id
+        +str app_secret
+        +str remark
+        +bool is_active
+        +bool is_default
+    }
+
+    class WechatAccountResponse {
+        +int id
+        +str name
+        +str app_id_masked
+        +str remark
+        +bool is_active
+        +bool is_default
+        +datetime created_at
+        +datetime updated_at
+    }
+
+    class PublishRequest {
+        +int script_id
+        +list~str~ images
+        +int wechat_account_id
+    }
+
+    PublishLog "n" --> "0..1" WechatAccount : wechat_account_id
+    WechatAccountRouter ..> CryptoUtils : 加密/解密 AppSecret
+    WechatAccountRouter ..> WechatAccount : CRUD
+    PublishRouter ..> WechatAccount : 按 id/默认 查询
+    PublishRouter ..> CryptoUtils : decrypt_secret
+    PublishRouter ..> WechatService : 按账号构造实例
+    WechatService ..> CryptoUtils : 调用前解密
+    WechatAccountResponse ..> WechatAccount : from_attributes(脱敏)
+    WechatAccountCreate ..> WechatAccount : 新增
+    WechatAccountUpdate ..> WechatAccount : 更新
+    PublishRequest ..> PublishRouter : 请求体

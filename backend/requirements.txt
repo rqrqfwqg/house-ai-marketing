@@ -24,6 +24,9 @@ python-dotenv==1.0.0
 # ========== 日志 ==========
 loguru==0.7.3
 
+# ========== 加密 ==========
+cryptography>=42.0.0  # Fernet 对称加密公众号 AppSecret（多账号存储）
+
 # ========== 日期时间 ==========
 # pydantic[datetime] 已包含在 pydantic==2.9.0 中
 

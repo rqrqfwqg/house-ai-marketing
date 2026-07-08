@@ -27,6 +27,10 @@ WECHAT_API_BASE = "https://api.weixin.qq.com/cgi-bin"
 # access_token 提前刷新时间（秒），过期前 5 分钟刷新
 TOKEN_REFRESH_AHEAD = 300
 
+# 模块级 access_token 缓存：按 appid 隔离，跨实例共享，彻底解决多账号互相覆盖。
+# 结构: { appid: (token, expires_at_unix_ts) }
+TOKEN_CACHE: dict[str, tuple[str, float]] = {}
+
 # 图片大小上限（2MB，微信素材接口限制）
 IMAGE_MAX_SIZE = 2 * 1024 * 1024
 
@@ -40,19 +44,24 @@ WECHAT_DIGEST_MAX_LEN = 120
 class WechatService:
     """微信公众号服务类 - 草稿箱 API 模式"""
 
-    def __init__(self):
+    def __init__(self, app_id: Optional[str] = None, app_secret: Optional[str] = None):
         """
-        初始化：从 settings 读取 AppID/AppSecret，初始化 access_token 缓存。
+        初始化：支持按账号构造实例，无参时退化为读取全局 settings（向后兼容）。
 
-        若 AppID/AppSecret 未配置，仅记录警告，调用时再抛出异常，
+        Args:
+            app_id: 指定公众号 AppID；为空则使用 ``settings.WECHAT_APPID``。
+            app_secret: 指定公众号 AppSecret（明文，仅在内存短暂存在）；为空则使用
+                ``settings.WECHAT_APPSECRET``。
+
+        若 AppID/AppSecret 均未配置，仅记录警告，调用时再抛出异常，
         以保证服务实例可正常创建（不影响其他平台功能）。
-        """
-        self.appid: str = settings.WECHAT_APPID or ""
-        self.appsecret: str = settings.WECHAT_APPSECRET or ""
 
-        # access_token 缓存：token 字符串 + 过期时间戳（Unix 秒）
-        self._access_token: Optional[str] = None
-        self._token_expires_at: float = 0.0
+        Note:
+            access_token 缓存已改为模块级 ``TOKEN_CACHE`` 按 appid 隔离，
+            不再持有实例级缓存，避免多账号互相覆盖。
+        """
+        self.appid: str = (app_id or settings.WECHAT_APPID or "").strip()
+        self.appsecret: str = (app_secret or settings.WECHAT_APPSECRET or "").strip()
 
         if not self.appid or not self.appsecret:
             logger.warning(
@@ -65,7 +74,7 @@ class WechatService:
     # ------------------------------------------------------------------
     async def _get_access_token(self) -> str:
         """
-        获取 access_token（带缓存，过期前 5 分钟自动刷新）。
+        获取 access_token（按 appid 隔离的模块级缓存，过期前 5 分钟自动刷新）。
 
         Returns:
             有效的 access_token 字符串。
@@ -78,10 +87,13 @@ class WechatService:
                 "未配置 WECHAT_APPID 或 WECHAT_APPSECRET，无法调用微信公众号 API"
             )
 
-        # 缓存有效则直接返回（在过期前 TOKEN_REFRESH_AHEAD 秒刷新）
+        # 命中模块级缓存（按 appid 隔离）：在过期前 TOKEN_REFRESH_AHEAD 秒刷新
         now = time.time()
-        if self._access_token and (now + TOKEN_REFRESH_AHEAD) < self._token_expires_at:
-            return self._access_token
+        cached = TOKEN_CACHE.get(self.appid)
+        if cached:
+            token, expires_at = cached
+            if token and (now + TOKEN_REFRESH_AHEAD) < expires_at:
+                return token
 
         # 重新获取 access_token
         url = f"{WECHAT_API_BASE}/token"
@@ -100,17 +112,16 @@ class WechatService:
             errcode = data.get("errcode")
             errmsg = data.get("errmsg", "未知错误")
             # token 失效需清除缓存以便下次重新获取
-            self._access_token = None
-            self._token_expires_at = 0.0
+            TOKEN_CACHE.pop(self.appid, None)
             raise RuntimeError(f"获取 access_token 失败：[{errcode}] {errmsg}")
 
-        self._access_token = data["access_token"]
+        token = data["access_token"]
         expires_in = int(data.get("expires_in", 7200))
-        self._token_expires_at = now + expires_in
+        TOKEN_CACHE[self.appid] = (token, now + expires_in)
         logger.info(
-            f"获取微信 access_token 成功，有效期 {expires_in} 秒"
+            f"获取微信 access_token 成功（appid={self.appid}），有效期 {expires_in} 秒"
         )
-        return self._access_token
+        return token
 
     # ------------------------------------------------------------------
     # 图片上传

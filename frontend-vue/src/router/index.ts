@@ -35,6 +35,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/pages/HistoryPage.vue'),
     meta: { title: '历史记录' },
   },
+  {
+    path: '/settings/wechat-accounts',
+    name: 'wechat-accounts',
+    component: () => import('@/pages/WechatAccountPage.vue'),
+    meta: { title: '公众号配置' },
+  },
 ]
 
 const router = createRouter({

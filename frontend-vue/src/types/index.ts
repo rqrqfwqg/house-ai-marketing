@@ -100,6 +100,7 @@ export type Platform = 'xiaohongshu' | 'wechat'
 export interface PublishRequest {
   script_id: number
   images: string[]
+  wechat_account_id?: number
 }
 
 export interface PublishResponse {
@@ -137,6 +138,49 @@ export interface XhsQrCodeResponse {
 
 export interface XhsLoginStatusResponse {
   logged_in: boolean
+}
+
+// ==================== WeChat Account（公众号多账号） ====================
+
+export interface WechatAccount {
+  id: number
+  name: string
+  /** 脱敏后的 AppID（如 wx12********cdef），绝不返回明文 */
+  app_id_masked: string
+  remark?: string
+  is_active: boolean
+  is_default: boolean
+  created_at: string
+  updated_at: string
+}
+
+export interface WechatAccountCreate {
+  name: string
+  app_id: string
+  app_secret: string
+  remark?: string
+  is_active?: boolean
+  is_default?: boolean
+}
+
+export interface WechatAccountUpdate {
+  name?: string
+  app_id?: string
+  /** 留空表示不修改 */
+  app_secret?: string
+  remark?: string
+  is_active?: boolean
+  is_default?: boolean
+}
+
+export interface WechatAccountListResponse {
+  items: WechatAccount[]
+  total: number
+}
+
+export interface WechatTestResponse {
+  success: boolean
+  message: string
 }
 
 // ==================== Health ====================

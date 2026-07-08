@@ -4,18 +4,20 @@
 """
 import json
 from pathlib import Path
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from loguru import logger
 
 from database import get_db
 from schemas import PublishRequest, PublishResponse, PublishLogResponse, SuccessResponse
 from services.xhs_service import xhs_service
-from services.wechat_service import wechat_service
-from models import PublishLog, Script, House
+from services.wechat_service import wechat_service, WechatService
+from models import PublishLog, Script, House, WechatAccount
 from database import AsyncSessionLocal
 from config import settings
+from crypto_utils import decrypt_secret
 
 # 创建路由
 router = APIRouter(
@@ -72,6 +74,67 @@ def _resolve_image_paths(house) -> list:
         image_paths.append(abs_path)
 
     return image_paths
+
+
+async def _resolve_wechat_service(
+    wechat_account_id: Optional[int],
+) -> Tuple[Optional[int], Optional[WechatService]]:
+    """
+    解析目标公众号账号并构造对应的 WechatService 实例。
+
+    解析顺序（PRD R-04 / R-06 / 架构共享知识）：
+      1. 指定 ``wechat_account_id`` → 查账号（不存在 404，禁用 400）；
+      2. 未指定 → 取 ``is_default=true`` 账号（启用则使用）；
+      3. 均无 → 回落全局 ``wechat_service`` 单例（读 .env 兜底）。
+
+    Args:
+        wechat_account_id: 请求中指定的账号 id（可为 None）。
+
+    Returns:
+        ``(account_id, WechatService 实例)``；不可用时 ``(None, None)``。
+
+    Raises:
+        HTTPException: 指定账号不存在(404) 或已禁用(400) 或密文解密失败(400)。
+    """
+    async with AsyncSessionLocal() as session:
+        # ① 指定账号
+        if wechat_account_id is not None:
+            acc = await session.get(WechatAccount, wechat_account_id)
+            if not acc:
+                raise HTTPException(status_code=404, detail="指定的公众号账号不存在")
+            if not acc.is_active:
+                raise HTTPException(
+                    status_code=400,
+                    detail="该公众号账号已禁用，无法发布，请换用其他账号或在配置页启用",
+                )
+            try:
+                secret = decrypt_secret(acc.app_secret_encrypted)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=400, detail=f"该账号 AppSecret 解密失败：{exc}"
+                )
+            svc = WechatService(app_id=acc.app_id, app_secret=secret)
+            return acc.id, svc
+
+        # ② 默认账号
+        result = await session.execute(
+            select(WechatAccount).where(WechatAccount.is_default == True)  # noqa: E712
+        )
+        acc = result.scalar_one_or_none()
+        if acc and acc.is_active:
+            try:
+                secret = decrypt_secret(acc.app_secret_encrypted)
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=400, detail=f"默认账号 AppSecret 解密失败：{exc}"
+                )
+            svc = WechatService(app_id=acc.app_id, app_secret=secret)
+            return acc.id, svc
+
+    # ③ .env 兜底单账号
+    if wechat_service.appid and wechat_service.appsecret:
+        return None, wechat_service
+    return None, None
 
 
 @router.get("/xhs-qrcode", response_model=SuccessResponse)
@@ -204,11 +267,16 @@ async def create_wechat_draft(
 
     - **script_id**: 文案ID
     - **images**: 图片路径列表（后端实际从房源获取）
+    - **wechat_account_id**: 目标公众号账号ID（可选，多账号选号）
 
-    返回：包含草稿 media_id
+    账号解析顺序：指定账号 → 默认账号 → .env 兜底单账号。
+    返回：包含草稿 media_id；并在 PublishLog 记录 wechat_account_id。
     """
     try:
-        logger.info(f"收到公众号草稿箱创建请求：script_id={request.script_id}")
+        logger.info(
+            f"收到公众号草稿箱创建请求：script_id={request.script_id}, "
+            f"wechat_account_id={request.wechat_account_id}"
+        )
 
         # 1. 获取文案和房源信息
         async with AsyncSessionLocal() as session:
@@ -229,8 +297,17 @@ async def create_wechat_draft(
         if not image_paths:
             logger.warning(f"房源 {house.id} 无图片，公众号草稿箱创建可能失败")
 
-        # 4. 调用微信公众号服务（草稿箱 API 模式）
-        result = await wechat_service.create_draft(
+        # 4. 解析目标公众号账号（指定 → 默认 → .env 兜底）
+        account_id, svc = await _resolve_wechat_service(request.wechat_account_id)
+        if svc is None:
+            raise HTTPException(
+                status_code=400,
+                detail="未配置可用的公众号账号，请在「公众号配置」中添加账号，"
+                "或配置 .env 的 WECHAT_APPID/WECHAT_APPSECRET",
+            )
+
+        # 5. 调用微信公众号服务（草稿箱 API 模式，按账号隔离 token）
+        result = await svc.create_draft(
             title=script.title,
             body=script.body,
             images=image_paths,
@@ -238,7 +315,7 @@ async def create_wechat_draft(
             highlights=script_highlights,
         )
 
-        # 5. 记录发布日志
+        # 6. 记录发布日志（含账号维度追溯）
         async with AsyncSessionLocal() as session:
             log = PublishLog(
                 house_id=script.house_id,
@@ -247,12 +324,13 @@ async def create_wechat_draft(
                 status="draft_created" if result["success"] else "failed",
                 error_msg=result.get("error"),
                 wechat_media_id=result.get("media_id"),
+                wechat_account_id=account_id,
             )
 
             session.add(log)
             await session.commit()
 
-        # 6. 返回结果
+        # 7. 返回结果
         return PublishResponse(
             success=result["success"],
             platform="wechat",

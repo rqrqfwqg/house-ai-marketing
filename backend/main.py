@@ -41,6 +41,26 @@ async def lifespan(app: FastAPI):
         except Exception:
             pass  # 列已存在，忽略
 
+    # 迁移：为 publish_logs 表添加 wechat_account_id 列（如果不存在）
+    async with engine.begin() as conn:
+        try:
+            await conn.execute(
+                text(
+                    "ALTER TABLE publish_logs "
+                    "ADD COLUMN wechat_account_id INTEGER REFERENCES wechat_accounts(id) ON DELETE SET NULL"
+                )
+            )
+            logger.info("迁移成功：publish_logs 表添加 wechat_account_id 列")
+        except Exception:
+            pass  # 列已存在，忽略
+
+    # 种子：从 .env 导入首个默认公众号账号（幂等，仅当表为空且配置了 .env 凭证时）
+    try:
+        from routes.wechat_account import seed_wechat_accounts_from_env
+        await seed_wechat_accounts_from_env()
+    except Exception as e:
+        logger.error(f"种子账号初始化失败：{e}")
+
     yield
     logger.info("应用关闭中...")
 
@@ -89,11 +109,12 @@ async def health_check():
 
 
 # 注册路由
-from routes import house, script, publish, history
+from routes import house, script, publish, history, wechat_account
 app.include_router(house.router, prefix="/api/v1")
 app.include_router(script.router, prefix="/api/v1")
 app.include_router(publish.router, prefix="/api/v1")
 app.include_router(history.router, prefix="/api/v1")
+app.include_router(wechat_account.router, prefix="/api/v1")
 
 # 静态文件服务（用于访问上传的图片）
 from fastapi.staticfiles import StaticFiles

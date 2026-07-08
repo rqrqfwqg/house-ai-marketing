@@ -8,6 +8,6 @@ from fastapi import APIRouter
 # main_router = APIRouter(prefix="/api/v1")
 
 # 导入各路由模块
-from . import house, script, publish, history
+from . import house, script, publish, history, wechat_account
 
-__all__ = ["house", "script", "publish", "history"]
+__all__ = ["house", "script", "publish", "history", "wechat_account"]

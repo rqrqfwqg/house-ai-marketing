@@ -29,6 +29,12 @@ dist/
 uploads/
 logs/
 
+# ========== 加密密钥回退文件（含敏感信息，禁止入库） ==========
+backend/.encryption_key
+
+# ========== Python 缓存 ==========
+__pycache__/
+
 # ========== IDE ==========
 .vscode/
 .idea/

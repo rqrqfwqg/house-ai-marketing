@@ -42,7 +42,13 @@ class Settings(BaseSettings):
     
     # ========== 微信公众号配置 ==========
     WECHAT_APPID: str = ""  # 微信公众号AppID（可选，V1只创建草稿）
-    WECHAT_APPSECRET: str = ""  # 微信公众号AppSecret（可选）
+    WECHAT_APPSECRET: str = ""  # 微信公众号AppSecret（可选，作为多账号兜底/种子来源）
+
+    # ========== 安全加密配置 ==========
+    # AppSecret 对称加密密钥（Fernet，44 字符 urlsafe base64）。
+    # 为空则回退 backend/.encryption_key（首次运行自动生成并 chmod 600，已加入 .gitignore）。
+    # 生成命令：python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    ENCRYPTION_KEY: str = ""
     
     # ========== 文件存储配置 ==========
     UPLOAD_DIR: str = "./uploads"  # 图片上传目录

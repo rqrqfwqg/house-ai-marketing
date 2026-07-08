@@ -1,0 +1,53 @@
+sequenceDiagram
+    autonumber
+    participant FE as 前端(配置页)
+    participant API as WechatAccountRouter
+    participant DB as Database
+    participant CR as CryptoUtils
+    participant WS as WechatService
+    participant WX as 微信公众号API
+
+    Note over FE,WX: ① 启动种子迁移（main.py lifespan 调用）
+    API->>DB: 查询 wechat_accounts 是否为空
+    alt 表为空 且 .env 含 WECHAT_APPID/SECRET
+        API->>CR: encrypt_secret(env.WECHAT_APPSECRET)
+        API->>DB: 插入默认账号(is_default=true, is_active=true)
+    end
+
+    Note over FE,WX: ② 配置页 - 新增账号
+    FE->>API: POST /wechat-accounts {name,app_id,app_secret,remark,is_active,is_default}
+    API->>API: 校验 app_id 格式(wx 开头)/唯一性
+    API->>CR: encrypt_secret(app_secret) → 密文
+    API->>DB: 插入；若 is_default 则清除其他默认
+    API-->>FE: WechatAccountResponse(仅 app_id_masked，无明文)
+
+    Note over FE,WX: ③ 配置页 - 列表/编辑/删除
+    FE->>API: GET /wechat-accounts?active_only=
+    API->>DB: 查询账号
+    API-->>FE: 列表(字段脱敏，不含 app_secret)
+    FE->>API: PUT /wechat-accounts/{id}
+    API->>CR: app_secret 非空则 encrypt_secret(否则保留原值)
+    API->>DB: 更新
+    FE->>API: DELETE /wechat-accounts/{id}
+    API->>DB: 删除(若该账号原为默认则默认标记清空)
+
+    Note over FE,WX: ④ 发布 - 选择账号调 draft/add
+    participant FP as 前端(发布页)
+    participant PR as PublishRouter
+    FP->>API: GET /wechat-accounts?active_only=true
+    API-->>FP: 下拉候选(仅启用账号)
+    FP->>PR: POST /publish/wechat {script_id, wechat_account_id}
+    PR->>DB: 按 id 或 is_default=true 查询账号
+    alt 账号存在但 is_active=false
+        PR-->>FP: 400 该账号已禁用，无法发布
+    else 找到启用账号
+        PR->>CR: decrypt_secret(app_secret_encrypted)
+        PR->>WS: WechatService(app_id, app_secret)
+        WS->>WX: token / add_material / uploadimg / draft/add
+        WX-->>WS: media_id
+        WS-->>PR: {success, media_id}
+        PR->>DB: 写 PublishLog(wechat_account_id, status=draft_created)
+        PR-->>FP: PublishResponse
+    else 无默认账号且无 .env 兜底
+        PR-->>FP: 400 未配置可用的公众号账号
+    end
