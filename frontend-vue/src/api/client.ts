@@ -3,7 +3,7 @@
  */
 import axios, { type AxiosInstance, type InternalAxiosRequestConfig } from 'axios'
 
-const BASE_URL = '/api/v1'
+const BASE_URL = import.meta.env.VITE_API_BASE || '/api/v1'
 
 const client: AxiosInstance = axios.create({
   baseURL: BASE_URL,

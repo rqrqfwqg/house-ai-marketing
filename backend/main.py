@@ -116,12 +116,12 @@ app.include_router(publish.router, prefix="/api/v1")
 app.include_router(history.router, prefix="/api/v1")
 app.include_router(wechat_account.router, prefix="/api/v1")
 
-# 静态文件服务（用于访问上传的图片）
+# 静态文件服务（用于访问上传的图片）—— 命名空间到 /house-ai/uploads，避免与同机其它系统冲突
 from fastapi.staticfiles import StaticFiles
 import os
 upload_dir = os.path.join(os.path.dirname(__file__), "uploads")
 if os.path.exists(upload_dir):
-    app.mount("/uploads", StaticFiles(directory=upload_dir), name="uploads")
+    app.mount("/house-ai/uploads", StaticFiles(directory=upload_dir), name="uploads")
 
 
 if __name__ == "__main__":
