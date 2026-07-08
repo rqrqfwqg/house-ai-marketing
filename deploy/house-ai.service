@@ -4,9 +4,10 @@ After=network.target
 
 [Service]
 Type=simple
-# 按需修改运行用户/组（建议专用低权限用户，如 www-data 或 houseai）
-User=www-data
-Group=www-data
+# 运行用户/组：建议使用专用低权限用户 houseai（与 deploy/tencent-setup.sh 初始化脚本一致）。
+# 非腾讯云环境若已存在 www-data，可改回 www-data；确保该用户对 /opt/house-ai 有读/执行权限。
+User=houseai
+Group=houseai
 WorkingDirectory=/opt/house-ai/backend
 # 使用虚拟环境里的 uvicorn；无虚拟环境则改为 python -m uvicorn
 ExecStart=/opt/house-ai/backend/venv/bin/python -m uvicorn main:app --host 127.0.0.1 --port 8000 --no-reload
@@ -19,3 +20,17 @@ StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
+
+# ============================================================
+# 腾讯云 TencentOS 补充说明（详见 DEPLOY.md 第九章）
+# ============================================================
+# 1) 运行用户：tencent-setup.sh 会创建 houseai 用户并设 /opt/house-ai 属主为 houseai，
+#    故此处默认 User/Group=houseai。请确保用户已存在：id houseai
+# 2) nginx 服务名：TencentOS 与 Ubuntu 均用 systemd，服务名为 nginx.service：
+#       systemctl enable --now nginx
+#       systemctl reload nginx
+# 3) SSL 证书目录权限：若后端需读取 /etc/nginx/ssl/house-ai/ 下的证书（一般不需，由 nginx 读取即可），
+#    请保证该目录对 houseai 至少可读：
+#       chmod 755 /etc/nginx/ssl/house-ai
+#       chmod 644 /etc/nginx/ssl/house-ai/*.pem
+# 4) 后端仅绑 127.0.0.1:8000，由 nginx 反代；安全组/防火墙只放 22/80/443（见 DEPLOY.md 9.2）。

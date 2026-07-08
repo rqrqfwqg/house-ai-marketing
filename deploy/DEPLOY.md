@@ -3,6 +3,8 @@
 本文说明如何把「房屋租赁AI营销系统」部署到与 `tools-management` 同一台服务器上，
 通过**子路径 `/house-ai/`** 与原有系统区分，避免端口/路径冲突。
 
+> 腾讯云场景（安全组/防火墙、DNSPod 解析、免费 SSL 证书、TencentOS 系统初始化）请见 **第九章**。
+
 ---
 
 ## 一、端口规划与适配说明
@@ -18,6 +20,7 @@
 | 53 | 系统 DNS | **不绑**：任何服务都不要占用 53，内部解析走系统 resolver |
 
 > 关键：house-ai 后端**不监听公网**，只接受来自本机 nginx 的转发；对外只暴露 80/443。
+> 腾讯云安全组/防火墙的端口放行清单见 **第九章第二节**。
 
 ---
 
@@ -71,6 +74,9 @@ FRONTEND_URL=https://your-domain
 
 后端监听 `127.0.0.1:8000`。验证：`curl 127.0.0.1:8000/api/v1/health`。
 
+> 腾讯云 TencentOS 场景：建议用专用低权限用户 `houseai` 运行（与 `deploy/tencent-setup.sh`
+> 初始化脚本创建的用户一致），并参考 **第九章第五节** 做系统初始化。
+
 ---
 
 ## 四、前端
@@ -99,6 +105,12 @@ npm run build
    ```
 
 外部访问：`https://your-domain/house-ai/`。
+
+> 腾讯云场景见 **第九章**：
+> - 若 house-ai 使用**独立子域名**（如 `house-ai.your-domain`），可直接 `include deploy/nginx-house-ai-tencent.conf`
+>   这个完整的 80/443 server 块（自带 TLS 与腾讯云免费证书路径占位）。
+> - 若沿用 tools-management **同域子路径**，则把 `nginx-house-ai.conf` 的 location 粘进 tools-management 现有
+>   server，并在该 server 上挂证书（复用或单独申请，见第八章第 5 点）。
 
 ---
 
@@ -129,7 +141,120 @@ ssh -L 9222:127.0.0.1:9222 user@your-server
 
 1. **后端绝不绑 0.0.0.0**：生产用 `--host 127.0.0.1`，仅 nginx 可达。
 2. **不要占用 53 / 31059**：前者是系统 DNS，后者是无关服务。
-3. **防火墙**：公网只放 22/80/443；8000、9222 仅本机。
+3. **防火墙**：公网只放 22/80/443；8000、9222 仅本机。腾讯云安全组/防火墙配置见第九章第二节。
 4. **上传命名空间**：本系统上传挂在 `/house-ai/uploads`，与 tools-management 的 `/uploads`（如有）互不干扰。
    若你本机 tools-management 也用根 `/uploads` 且需共存，本方案已通过前缀规避冲突。
-5. **证书**：复用 tools-management 现有的 80/443 证书即可，无需额外申请。
+5. **证书（两种选项）**：
+   - **选项 A（推荐，独立证书）**：在腾讯云 SSL 证书控制台为 house-ai 单独申请免费 DV 证书（见第九章第四节），
+     部署到 `/etc/nginx/ssl/house-ai/`，由 `deploy/nginx-house-ai-tencent.conf` 或 tools-management 的 server 块引用。
+   - **选项 B（复用证书）**：若 house-ai 与 tools-management 同域且共用同一张证书，可直接复用 tools-management 现有的
+     80/443 证书，无需额外申请。
+   > 腾讯云可单独为 house-ai 申请免费证书，并非必须复用 tools-management 的证书。
+
+---
+
+## 九、腾讯云部署专章
+
+适用于把 house-ai 部署到**腾讯云**（CVM 或轻量应用服务器）的场景。本章在通用部署之上补齐：
+服务器选型、安全组/防火墙、DNSPod 解析、免费 SSL 证书、TencentOS 系统初始化。
+
+> 所有示例中的 `your-domain` 均为占位，请替换为你的真实域名；本章不写入任何真实密钥/证书内容。
+
+### 9.1 服务器选型
+
+| 类型 | 适用 | 防火墙形态 | 备注 |
+|------|------|-----------|------|
+| 腾讯云 CVM | 通用/生产 | **安全组**（控制台配置） | 系统可选 TencentOS Server 或 Ubuntu 22.04 |
+| 轻量应用服务器 | 轻量/起步 | **防火墙**（控制台配置） | 入口同样只放 22/80/443 |
+
+两者均自带 `systemd` 与 `python3`，部署步骤一致；区别仅在**云控制台侧**的入站规则叫"安全组"还是"防火墙"。
+
+### 9.2 安全组 / 防火墙放行清单
+
+**原则**：对外只放 `22 / 80 / 443`；内部 `8000`（后端）、`9222`（Chrome 调试）仅绑 `127.0.0.1`，**不需要**对外放行；
+**绝不**对外开放 `53 / 31059 / 3000`。
+
+腾讯云控制台路径：
+- **CVM**：云服务器控制台 → 实例 → 「安全组」→ 入站规则 → 添加规则（协议端口：`TCP:22/80/443`，来源：`0.0.0.0/0`）。
+- **轻量应用服务器**：轻量控制台 → 实例 → 「防火墙」→ 添加规则（应用类型选 `HTTPS`/`HTTP`/`SSH`，或自定义 TCP 端口 `443/80/22`）。
+
+| 协议:端口 | 策略 | 说明 |
+|-----------|------|------|
+| TCP 22 | 允许 | SSH 管理 |
+| TCP 80 | 允许 | HTTP（强制跳 HTTPS） |
+| TCP 443 | 允许 | HTTPS 前端 |
+| TCP 8000 | 拒绝/不开放 | 仅本机，由 nginx 反代，勿放公网 |
+| TCP 9222 | 拒绝/不开放 | 仅本机 + SSH 隧道 |
+| TCP 53 / 3000 / 31059 | 拒绝 | 系统 DNS / 无关服务，绝不开放 |
+
+> 同时确认系统内部防火墙（firewalld / ufw）也只放 22/80/443；`deploy/tencent-setup.sh` 会自动处理。
+
+### 9.3 DNSPod 解析
+
+在**腾讯云 DNSPod**（dnspod.cloud.tencent.com）为域名添加解析，按 house-ai 的访问方式二选一：
+
+- **方式一（同域子路径 `/house-ai`，与 tools-management 同域）**：
+  若 `your-domain` 已有 A 记录指向本机公网 IP，则**无需新增**解析，house-ai 复用该 A 记录，
+  仅通过 `/house-ai/` 子路径区分。
+- **方式二（独立子域名，如 `house-ai.your-domain`）**：
+  新增一条 **A 记录**：主机记录 `house-ai`，记录值 = 服务器**公网 IP**，TTL 默认。
+  此时 nginx 用独立 server 块（见 9.6 与 `deploy/nginx-house-ai-tencent.conf`），`server_name house-ai.your-domain;`。
+
+> 证书与 server_name 必须和 DNSPod 解析的域名一致，否则浏览器会报证书不匹配。
+
+### 9.4 腾讯云免费 SSL 证书
+
+1. 进入**腾讯云 SSL 证书控制台**（console.cloud.tencent.com/ssl）→「我的证书」→「申请免费证书」。
+2. 证书品牌选 **TrustAsia 免费 DV**，填写域名（同域场景填 `your-domain`；独立子域名填 `house-ai.your-domain`）。
+3. 按提示完成 DNS 验证（在 DNSPod 加一条 `_dnsauth` TXT 记录）。
+4. 签发后「下载」→ 选择 **Nginx** 格式（得到 `xxx.pem` + `xxx.key`，通常打包为 `fullchain.pem` 与 `privkey.pem`）。
+5. 上传到服务器目录（建议 `/etc/nginx/ssl/house-ai/`，该目录由 `tencent-setup.sh` 预创建）：
+   ```
+   /etc/nginx/ssl/house-ai/
+   ├── fullchain.pem     # 证书（含中间证书）
+   └── privkey.pem       # 私钥
+   ```
+6. 设好权限，确保 nginx 运行用户（及 house-ai 后端用户 `houseai`，若需读取）可读取：
+   ```bash
+   chmod 644 /etc/nginx/ssl/house-ai/*.pem
+   chmod 755 /etc/nginx/ssl/house-ai
+   ```
+   > 证书由**你在腾讯云控制台申请+下载**，脚本不代办；请勿把私钥提交到 git。
+
+### 9.5 TencentOS 系统初始化
+
+在 TencentOS Server（或 Ubuntu 22.04）上一键初始化：`sudo bash deploy/tencent-setup.sh`
+脚本会（幂等、不写密钥）：
+1. 检测系统（TencentOS 用 `dnf`/`yum`，Ubuntu 用 `apt`）并安装 `nginx`；
+2. 创建专用低权限用户 `houseai`；
+3. 创建 `/opt/house-ai/{backend,frontend-vue/dist}` 目录结构；
+4. 初始化 `python3` 虚拟环境（`/opt/house-ai/backend/venv`），**不装业务依赖**——
+   传代码后请 `source venv/bin/activate && pip install -r requirements.txt`；
+5. 设置目录属主为 `houseai`；
+6. 放行系统防火墙 `22/80/443`（检测到 firewalld/ufw 时）；
+7. 预创建 `/etc/nginx/ssl/house-ai/` 目录并提示证书权限（不下载证书）。
+
+> 手动等效命令（节选）：
+> ```bash
+> # TencentOS
+> sudo dnf install -y nginx
+> sudo useradd -r -s /sbin/nologin -d /opt/house-ai houseai
+> sudo mkdir -p /opt/house-ai/backend /opt/house-ai/frontend-vue/dist
+> sudo python3 -m venv /opt/house-ai/backend/venv
+> sudo chown -R houseai:houseai /opt/house-ai
+> sudo mkdir -p /etc/nginx/ssl/house-ai && sudo chmod 755 /etc/nginx/ssl/house-ai
+> ```
+
+### 9.6 证书在 nginx 中的位置
+
+`deploy/nginx-house-ai-tencent.conf` 是一份**完整的 80/443 server 块范例**，可直接 `include`：
+- `listen 80` → 301 跳 `https`；
+- `listen 443 ssl`，`ssl_certificate` / `ssl_certificate_key` 指向占位
+  `/etc/nginx/ssl/house-ai/fullchain.pem`、`/etc/nginx/ssl/house-ai/privkey.pem`；
+- TLS 加固：`TLSv1.2`/`TLSv1.3` + 强 cipher + `HSTS`；
+- 通过 `include /opt/house-ai/deploy/nginx-house-ai.conf;` 复用既有 location（API 反代 / uploads / 前端 SPA / deny docs）。
+
+使用方式（二选一，与 9.3 对应）：
+- **独立子域名**：把本文件放进 `/etc/nginx/conf.d/`（或 `sites-enabled/`），`server_name` 设子域名，`nginx -t && systemctl reload nginx`。
+- **同域子路径**：不要单独 include 本 server 块；改为把 `nginx-house-ai.conf` 的 location 粘进 tools-management 现有
+  80/443 server，并在该 server 上引用 9.4 的腾讯云证书。
