@@ -202,3 +202,29 @@ def test_classify_48001_permission_error():
     svc = _svc()
     msg = svc._classify_wechat_error(48001, "api unauthorized")
     assert "权限" in msg or "认证" in msg
+
+
+def test_classify_40164_ip_whitelist_with_ipv4_and_ipv6():
+    """40164 应从 errmsg 提取 IPv4 并给出含 IP 与白名单的清晰指引。"""
+    svc = _svc()
+    msg = svc._classify_wechat_error(
+        40164, "invalid ip 38.47.118.9 ipv6 ::ffff:38.47.118.9, not in whitelist"
+    )
+    assert "38.47.118.9" in msg
+    assert "白名单" in msg
+
+
+def test_classify_40164_ip_whitelist_simple_ipv4():
+    """40164 带简单 IPv4 时应提取出该 IP。"""
+    svc = _svc()
+    msg = svc._classify_wechat_error(40164, "invalid ip 1.2.3.4, not in whitelist")
+    assert "1.2.3.4" in msg
+    assert "白名单" in msg
+
+
+def test_classify_40164_ip_whitelist_no_ip_fallback():
+    """40164 但 errmsg 中无法提取到 IP 时，应回退为含「白名单」的通用文案，且不抛异常。"""
+    svc = _svc()
+    msg = svc._classify_wechat_error(40164, "some weird message")
+    assert "白名单" in msg
+

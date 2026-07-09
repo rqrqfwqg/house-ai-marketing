@@ -10,6 +10,7 @@
 5. 调用 draft/add 新建草稿
 """
 import os
+import re
 import time
 import mimetypes
 from typing import Dict, Any, List, Optional, Tuple
@@ -416,6 +417,24 @@ class WechatService:
             code = int(errcode) if errcode is not None else 0
         except (TypeError, ValueError):
             code = 0
+
+        # 40164：服务器出口 IP 不在公众号 IP 白名单中（属于运维配置问题，
+        # 需用户到公众号后台把服务器出网 IP 加入「IP白名单」）。errmsg 形如：
+        # "invalid ip 38.47.118.9 ipv6 ::ffff:38.47.118.9, not in whitelist"。
+        # 该错误码涉及动态 IP，不放入静态字典，在此做专门处理。
+        if code == 40164:
+            ip_match = re.search(r"(\d{1,3}\.){3}\d{1,3}", errmsg or "")
+            if ip_match:
+                ip = ip_match.group(0)
+                return (
+                    f"服务器出口 IP 不在公众号 IP 白名单中：请将 IP {ip} 加入公众号后台"
+                    "「设置与开发 → 基本配置 → IP白名单」，保存后重试"
+                    "（若服务器使用 NAT 出口，需确认实际出网 IP）"
+                )
+            return (
+                "服务器 IP 不在公众号 IP 白名单中，请到公众号后台"
+                "「设置与开发 → 基本配置 → IP白名单」添加当前服务器出口 IP 后重试"
+            )
 
         if code in WECHAT_ERROR_MESSAGES:
             return WECHAT_ERROR_MESSAGES[code]
