@@ -98,6 +98,17 @@
                 <el-tag size="small" type="info" effect="plain">
                   {{ styleLabel(sc.template_style) }}
                 </el-tag>
+                <el-tag
+                  v-if="sc.platform"
+                  size="small"
+                  type="success"
+                  effect="plain"
+                >
+                  {{ platformLabel(sc.platform) }}
+                </el-tag>
+                <el-tag v-else size="small" type="warning" effect="plain">
+                  未绑定平台
+                </el-tag>
                 <span class="script-date">{{ formatDate(sc.created_at) }}</span>
               </div>
             </div>

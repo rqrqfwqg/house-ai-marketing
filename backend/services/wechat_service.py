@@ -20,6 +20,7 @@ import httpx
 from loguru import logger
 
 from config import settings
+from services.platform_rules import PLATFORM_RULES, Platform
 
 
 # 微信公众号 API 基础地址
@@ -32,15 +33,24 @@ TOKEN_REFRESH_AHEAD = 300
 # 结构: { appid: (token, expires_at_unix_ts) }
 TOKEN_CACHE: dict[str, tuple[str, float]] = {}
 
+# ---------------------------------------------------------------------------
+# 微信平台约束（全部从 platform_rules 单源导入，消除魔法值漂移）
+# ---------------------------------------------------------------------------
+# 平台约束唯一真源见 services/platform_rules.py。
+# 这里保留同名模块级常量，仅做「引用别名」，供本文件既有逻辑（_truncate_title_by_bytes、
+# _build_digest、_check_image）与现有测试（test_wechat_service.py）无缝复用，
+# 其取值与 platform_rules 保持一致，后续只需改 platform_rules 一处。
+_WECHAT_RULE = PLATFORM_RULES[Platform.WECHAT.value]
+
 # 图片大小上限（2MB，微信素材接口限制）
-IMAGE_MAX_SIZE = 2 * 1024 * 1024
+IMAGE_MAX_SIZE = _WECHAT_RULE.image_max_bytes
 
 # 微信图文标题最大长度（注意：微信按「字节」限制，64 字节；
 # 中文 UTF-8 占 3 字节，因此纯中文标题最多约 21 字）。
-WECHAT_TITLE_MAX_LEN = 64
+WECHAT_TITLE_MAX_LEN = _WECHAT_RULE.title_max
 
 # 摘要最大长度（微信按字符限制，120 字符）
-WECHAT_DIGEST_MAX_LEN = 120
+WECHAT_DIGEST_MAX_LEN = _WECHAT_RULE.digest_max
 
 # 标题截断时附加的省略号（UTF-8 占 3 字节）
 WECHAT_TITLE_ELLIPSIS = "…"

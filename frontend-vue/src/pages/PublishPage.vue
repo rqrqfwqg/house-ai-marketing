@@ -25,16 +25,32 @@
       </div>
     </el-card>
 
-    <!-- 平台选择 -->
+    <!-- 平台选择（平台优先：已绑定则锁定直推，未绑定走旧数据兼容） -->
     <el-card class="section-card" shadow="never">
       <template #header>
-        <span class="card-title">选择发布平台</span>
+        <span class="card-title">发布平台</span>
       </template>
+      <el-alert
+        v-if="!platformLocked && script"
+        type="warning"
+        :closable="false"
+        show-icon
+        class="platform-compat-hint"
+        title="该文案未绑定平台（旧数据），建议按目标平台重新生成以获得最佳合规；也可临时选择平台直接推送。"
+      />
+      <el-alert
+        v-else-if="platformLocked && lockedPlatformText"
+        type="success"
+        :closable="false"
+        show-icon
+        class="platform-compat-hint"
+        :title="`已锁定平台：${lockedPlatformText}（平台优先，不可跨平台改推）`"
+      />
       <div class="platform-cards">
         <div
           class="platform-card"
-          :class="{ active: selectedPlatform === 'xiaohongshu' }"
-          @click="selectedPlatform = 'xiaohongshu'"
+          :class="{ active: selectedPlatform === 'xiaohongshu', locked: platformLocked }"
+          @click="!platformLocked && (selectedPlatform = 'xiaohongshu')"
         >
           <el-icon :size="24" color="#ff2442">
             <component :is="selectedPlatform === 'xiaohongshu' ? 'CircleCheck' : 'ChatRound'" />
@@ -44,8 +60,8 @@
         </div>
         <div
           class="platform-card"
-          :class="{ active: selectedPlatform === 'wechat' }"
-          @click="selectedPlatform = 'wechat'"
+          :class="{ active: selectedPlatform === 'wechat', locked: platformLocked }"
+          @click="!platformLocked && (selectedPlatform = 'wechat')"
         >
           <el-icon :size="24" color="#07c160">
             <component :is="selectedPlatform === 'wechat' ? 'CircleCheck' : 'ChatDotSquare'" />
@@ -89,10 +105,10 @@
         size="large"
         style="width: 100%"
         :loading="publishing"
-        :disabled="!script"
+        :disabled="!script || !selectedPlatform"
         @click="handlePublish"
       >
-        {{ publishing ? '发布中...' : `发布到${platformLabel}` }}
+        {{ publishButtonText }}
       </el-button>
       <el-button
         v-if="selectedPlatform === 'xiaohongshu'"
@@ -181,18 +197,36 @@ const scriptId = computed(() => {
 const script = ref<Script | null>(null)
 const loading = ref(false)
 const publishing = ref(false)
-const selectedPlatform = ref<Platform>('xiaohongshu')
+const selectedPlatform = ref<Platform | ''>('')
 const publishResult = ref<PublishResponse | null>(null)
 const showQrCode = ref(false)
+
+// 文案绑定的平台（平台优先：生成时写入，不可变）
+const scriptPlatform = computed<string | null>(
+  () => script.value?.platform ?? null
+)
+// 是否已绑定平台（绑定则锁定，不允许跨平台改推）
+const platformLocked = computed(() => !!scriptPlatform.value)
+const lockedPlatformText = computed(() =>
+  scriptPlatform.value === 'wechat'
+    ? '微信公众号'
+    : scriptPlatform.value === 'xiaohongshu'
+      ? '小红书'
+      : ''
+)
+
+// 发布按钮文案随平台变化（微信→上传草稿箱 / 小红书→发布笔记）
+const publishButtonText = computed(() => {
+  if (publishing.value) return '发布中...'
+  if (selectedPlatform.value === 'wechat') return '上传草稿箱'
+  if (selectedPlatform.value === 'xiaohongshu') return '发布笔记'
+  return '发布'
+})
 
 // 公众号账号下拉
 const wechatAccounts = ref<WechatAccount[]>([])
 const selectedWechatAccountId = ref<number | undefined>(undefined)
 const loadingWechatAccounts = ref(false)
-
-const platformLabel = computed(() => {
-  return selectedPlatform.value === 'xiaohongshu' ? '小红书' : '微信公众号'
-})
 
 const resultTitle = computed(() => {
   if (!publishResult.value) return ''
@@ -228,7 +262,14 @@ onMounted(() => {
   }
 })
 
-// 切换平台时按需加载公众号账号
+// 文案加载完成后，将平台锁定为 script.platform（NULL 旧数据则留空，允许临时选择直推）
+watch(script, (s) => {
+  if (s) {
+    selectedPlatform.value = (s.platform || '') as Platform | ''
+  }
+})
+
+// 切换平台时按需加载公众号账号（仅微信平台需要选号）
 watch(selectedPlatform, (platform) => {
   if (platform === 'wechat') {
     // 切回小红书时清空选择，避免误带账号
@@ -271,6 +312,7 @@ async function loadScript(): Promise<void> {
 
 async function handlePublish(): Promise<void> {
   if (!script.value) return
+  if (!selectedPlatform.value) return
 
   publishing.value = true
   publishResult.value = null
@@ -363,6 +405,23 @@ function openEditor(url?: string): void {
 .platform-cards {
   display: flex;
   gap: 12px;
+}
+
+.platform-card.locked {
+  cursor: default;
+  opacity: 0.9;
+}
+
+.platform-card.locked:hover {
+  border-color: #e8e8e8;
+}
+
+.platform-card.locked.active:hover {
+  border-color: #409eff;
+}
+
+.platform-compat-hint {
+  margin-bottom: 12px;
 }
 
 .platform-card {

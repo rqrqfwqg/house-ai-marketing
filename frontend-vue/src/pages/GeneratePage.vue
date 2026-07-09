@@ -38,10 +38,56 @@
       <el-empty v-else description="未找到房源信息" :image-size="60" />
     </el-card>
 
+    <!-- ① 选择目标平台（平台优先：生成前必选） -->
+    <el-card class="section-card" shadow="never">
+      <template #header>
+        <span class="card-title">① 选择目标平台（必选）</span>
+      </template>
+      <div class="platform-cards">
+        <div
+          class="platform-card"
+          :class="{ active: selectedPlatform === 'xiaohongshu' }"
+          @click="selectedPlatform = 'xiaohongshu'"
+        >
+          <el-icon :size="24" color="#ff2442">
+            <component :is="selectedPlatform === 'xiaohongshu' ? 'CircleCheck' : 'ChatRound'" />
+          </el-icon>
+          <div class="platform-name">小红书</div>
+          <div class="platform-desc">发布到小红书笔记</div>
+        </div>
+        <div
+          class="platform-card"
+          :class="{ active: selectedPlatform === 'wechat' }"
+          @click="selectedPlatform = 'wechat'"
+        >
+          <el-icon :size="24" color="#07c160">
+            <component :is="selectedPlatform === 'wechat' ? 'CircleCheck' : 'ChatDotSquare'" />
+          </el-icon>
+          <div class="platform-name">微信公众号</div>
+          <div class="platform-desc">创建微信草稿</div>
+        </div>
+      </div>
+      <div v-if="selectedPlatform" class="platform-hint">
+        <el-alert
+          :type="selectedPlatform === 'wechat' ? 'success' : 'warning'"
+          :closable="false"
+          show-icon
+          :title="platformConstraintText"
+        />
+      </div>
+      <el-alert
+        v-else
+        type="info"
+        :closable="false"
+        show-icon
+        title="请先选择目标平台，再生成文案（无平台入口已废弃）"
+      />
+    </el-card>
+
     <!-- 风格选择 -->
     <el-card class="section-card" shadow="never">
       <template #header>
-        <span class="card-title">选择文案风格</span>
+        <span class="card-title">② 选择文案风格</span>
       </template>
       <div class="style-cards">
         <div
@@ -70,7 +116,7 @@
         size="large"
         style="width: 100%"
         :loading="generating"
-        :disabled="!house"
+        :disabled="!house || !selectedPlatform"
         @click="handleGenerate"
       >
         {{ generating ? '正在生成文案...' : '生成文案' }}
@@ -134,6 +180,7 @@ import { CircleCheck, Star, Coffee, MagicStick } from '@element-plus/icons-vue'
 import { getHouse } from '@/api/house'
 import { generateScript } from '@/api/script'
 import { TEMPLATE_STYLES, type House, type Script, type TemplateStyle } from '@/types'
+import { PLATFORM_RULES, type Platform } from '@/utils/platformRules'
 
 const route = useRoute()
 const router = useRouter()
@@ -148,12 +195,34 @@ const script = ref<Script | null>(null)
 const loadingHouse = ref(false)
 const generating = ref(false)
 const selectedStyle = ref<TemplateStyle>('professional')
+// 目标平台（平台优先：生成前必选；'' 表示未选）
+const selectedPlatform = ref<Platform | ''>('')
 
 const styleIcons: Record<TemplateStyle, any> = {
   professional: Star,
   friendly: Coffee,
   urgent: MagicStick,
 }
+
+// 平台约束实时提示文本（与 platform_rules 镜像，单源）
+const platformConstraintText = computed(() => {
+  const p = selectedPlatform.value
+  if (!p) return ''
+  const r = PLATFORM_RULES[p]
+  if (p === 'wechat') {
+    const mb = r.imageMaxBytes ? (r.imageMaxBytes / 1024 / 1024).toFixed(0) : ''
+    return (
+      `标题 ≤${r.titleMax} 字节（约 ${Math.floor(r.titleMax / 3)} 中文字） · ` +
+      `摘要 ≤${r.digestMax} 字 · 封面必填且 ≤${mb}MB · ` +
+      `可正常出现「出租/租房」等合规词`
+    )
+  }
+  return (
+    `标题 ≤${r.titleMax} 字 · 正文 ≤${r.bodyMax} 字 · ` +
+    `带 #话题#（≤${r.maxTopics} 个，每 ≤${r.maxTopicLen} 字） · ` +
+    `规避「出租/租房」等直白租赁词`
+  )
+})
 
 const scriptBodyLines = computed(() => {
   if (!script.value?.body) return []
@@ -182,12 +251,17 @@ async function loadHouse(): Promise<void> {
 
 async function handleGenerate(): Promise<void> {
   if (!houseId.value) return
+  if (!selectedPlatform.value) {
+    ElMessage.warning('请先选择目标平台')
+    return
+  }
   generating.value = true
   script.value = null
   try {
     const result = await generateScript({
       house_id: houseId.value,
       template_style: selectedStyle.value,
+      platform: selectedPlatform.value,
     })
     script.value = result
     ElMessage.success('文案生成成功！')
@@ -310,6 +384,48 @@ function goPreview(): void {
 
 .generate-btn-area {
   padding: 12px;
+}
+
+.platform-cards {
+  display: flex;
+  gap: 12px;
+}
+
+.platform-card {
+  flex: 1;
+  border: 2px solid #e8e8e8;
+  border-radius: 8px;
+  padding: 16px 8px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.platform-card:hover {
+  border-color: #c0d8ff;
+}
+
+.platform-card.active {
+  border-color: #409eff;
+  background-color: #f0f7ff;
+}
+
+.platform-name {
+  font-size: 14px;
+  font-weight: 600;
+  color: #303133;
+  margin-top: 6px;
+}
+
+.platform-desc {
+  font-size: 11px;
+  color: #909399;
+  margin-top: 2px;
+}
+
+.platform-hint {
+  margin-top: 12px;
 }
 
 .script-result {

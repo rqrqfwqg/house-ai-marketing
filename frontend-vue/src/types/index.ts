@@ -61,6 +61,8 @@ export interface Script {
 export interface ScriptGenerateRequest {
   house_id: number
   template_style?: TemplateStyle
+  /** 目标发布平台（xiaohongshu / wechat），平台优先：生成即绑定，必填 */
+  platform: Platform
 }
 
 export interface ScriptUpdateRequest {

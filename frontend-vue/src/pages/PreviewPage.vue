@@ -54,6 +54,17 @@
         <el-form label-position="top">
           <el-form-item label="标题">
             <el-input v-model="editForm.title" placeholder="请输入标题" />
+            <div v-if="titleCount" class="char-counter" :class="{ over: titleCount.overLimit }">
+              <template v-if="titleCount.unit === 'byte'">
+                剩余 {{ titleCount.remaining }}/{{ Math.floor(titleCount.max / 3) }} 字（字节 {{ titleCount.count }}/{{ titleCount.max }}）
+              </template>
+              <template v-else>
+                {{ titleCount.count }}/{{ titleCount.max }} 字
+              </template>
+            </div>
+            <div v-else class="platform-unbound-tip">
+              该文案未绑定平台（旧数据），建议按目标平台重新生成以获得最佳合规
+            </div>
           </el-form-item>
           <el-form-item label="正文">
             <el-input
@@ -63,6 +74,14 @@
               placeholder="请输入正文内容"
               resize="vertical"
             />
+            <div v-if="bodyCount" class="char-counter" :class="{ over: bodyCount.overLimit }">
+              <template v-if="bodyCount.max">
+                {{ bodyCount.count }}/{{ bodyCount.max }} 字
+              </template>
+              <template v-else>
+                已输入 {{ bodyCount.count }} 字
+              </template>
+            </div>
           </el-form-item>
           <el-form-item label="标签">
             <el-input
@@ -93,7 +112,7 @@
           @click="goPublish"
         >
           <el-icon><Promotion /></el-icon>
-          选择平台发布
+          {{ publishButtonText }}
         </el-button>
       </div>
     </template>
@@ -109,6 +128,7 @@ import { ElMessage } from 'element-plus'
 import { Edit, Promotion } from '@element-plus/icons-vue'
 import { getScript, updateScript } from '@/api/script'
 import type { Script, ScriptUpdateRequest } from '@/types'
+import { countTitle, countBody, type Platform } from '@/utils/platformRules'
 
 const route = useRoute()
 const router = useRouter()
@@ -119,6 +139,30 @@ const script = ref<Script | null>(null)
 const loading = ref(false)
 const editMode = ref(false)
 const saving = ref(false)
+
+// 文案绑定的平台（平台优先：生成时写入）
+const scriptPlatform = computed<string | null>(
+  () => script.value?.platform ?? null
+)
+
+// 发布按钮文案随平台变化（微信→发布到微信公众号 / 小红书→发布到小红书；未绑定→选择平台发布）
+const publishButtonText = computed(() => {
+  if (scriptPlatform.value === 'wechat') return '发布到微信公众号'
+  if (scriptPlatform.value === 'xiaohongshu') return '发布到小红书'
+  return '选择平台发布'
+})
+
+// 编辑态实时约束计数（与 platform_rules 镜像口径一致）
+const titleCount = computed(() => {
+  const p = scriptPlatform.value
+  if (!p) return null
+  return countTitle(editForm.title || '', p as Platform)
+})
+const bodyCount = computed(() => {
+  const p = scriptPlatform.value
+  if (!p) return null
+  return countBody(editForm.body || '', p as Platform)
+})
 
 const editForm = reactive<ScriptUpdateRequest>({
   title: '',
@@ -286,6 +330,23 @@ function goPublish(): void {
 .edit-actions {
   margin-top: 12px;
   text-align: right;
+}
+
+.char-counter {
+  font-size: 12px;
+  color: #909399;
+  margin-top: 4px;
+}
+
+.char-counter.over {
+  color: #f56c6c;
+  font-weight: 600;
+}
+
+.platform-unbound-tip {
+  font-size: 12px;
+  color: #e6a23c;
+  margin-top: 4px;
 }
 
 .publish-area {

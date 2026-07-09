@@ -208,6 +208,17 @@ async def publish_to_xiaohongshu(
             if not script:
                 raise HTTPException(status_code=404, detail="文案不存在")
 
+            # 防御性校验：已绑定平台且与目标平台不一致则拒绝跨平台直推
+            # （平台优先：跨平台须重新生成）；未绑定（NULL，历史旧数据）允许临时直推。
+            if script.platform and script.platform != "xiaohongshu":
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"文案已绑定平台 {script.platform}，与目标平台 xiaohongshu "
+                        "不一致，请按小红书重新生成文案"
+                    ),
+                )
+
             house = await session.get(House, script.house_id)
             if not house:
                 raise HTTPException(status_code=404, detail="房源不存在")
@@ -283,6 +294,17 @@ async def create_wechat_draft(
             script = await session.get(Script, request.script_id)
             if not script:
                 raise HTTPException(status_code=404, detail="文案不存在")
+
+            # 防御性校验：已绑定平台且与目标平台不一致则拒绝跨平台直推
+            # （平台优先：跨平台须重新生成）；未绑定（NULL，历史旧数据）允许临时直推。
+            if script.platform and script.platform != "wechat":
+                raise HTTPException(
+                    status_code=400,
+                    detail=(
+                        f"文案已绑定平台 {script.platform}，与目标平台 wechat "
+                        "不一致，请按微信公众号重新生成文案"
+                    ),
+                )
 
             house = await session.get(House, script.house_id)
             if not house:

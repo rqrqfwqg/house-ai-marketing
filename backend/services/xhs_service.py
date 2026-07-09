@@ -9,6 +9,7 @@ from loguru import logger
 from pathlib import Path
 
 from config import settings
+from services.platform_rules import PLATFORM_RULES, Platform
 
 
 class XhsService:
@@ -346,8 +347,10 @@ class XhsService:
             if not images:
                 raise ValueError("发布小红书笔记至少需要1张图片")
 
-            # 标题截断到20字
-            title = title[:20] if title else "无标题"
+            # 标题截断到平台上限（小红书按字符计，≤20 字）。
+            # 上限取自 platform_rules 单源（XHS_TITLE_MAX_CHARS），消除魔法值。
+            xhs_title_max = PLATFORM_RULES[Platform.XIAOHONGSHU.value].title_max
+            title = title[:xhs_title_max] if title else "无标题"
 
             arguments = {
                 "title": title,

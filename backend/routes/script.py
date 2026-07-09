@@ -16,6 +16,7 @@ from schemas import (
     ScriptListResponse,
 )
 from services.ai_service import ai_service
+from services.platform_rules import validate_script
 from models import Script
 from database import AsyncSessionLocal
 
@@ -32,31 +33,59 @@ async def generate_script(
     db: AsyncSession = Depends(get_db),
 ):
     """
-    生成AI文案
-    
+    生成AI文案（平台优先：生成即绑定目标平台）
+
     - **house_id**: 房源ID
     - **template_style**: 模板风格（professional/friendly/urgent）
-    
-    返回：生成的文案对象
+    - **platform**: 目标发布平台（xiaohongshu / wechat），必填；
+      生成即写入 ``Script.platform``，文案与平台绑定（不可变）。
+
+    返回：生成的文案对象（已绑定平台）
     """
     try:
-        logger.info(f"收到文案生成请求：house_id={request.house_id}, style={request.template_style}")
-        
-        # 1. 调用AI服务生成文案
+        logger.info(
+            f"收到文案生成请求：house_id={request.house_id}, "
+            f"style={request.template_style}, platform={request.platform}"
+        )
+
+        # 1. 调用AI服务生成文案（按平台约束分支提示词）
         script_data = await ai_service.generate_script(
             request.house_id,
-            request.template_style
+            request.template_style,
+            request.platform,
         )
-        
-        # 2. 保存到数据库
+
+        # 2. 落库前平台规则二次校验（生成侧兜底，与推送端截断形成双保险）
+        title = script_data["title"]
+        body = script_data["body"]
+        tags = script_data["tags"]
+        highlights = script_data.get("highlights", [])
+        violations = validate_script(
+            platform=request.platform,
+            title=title,
+            body=body,
+            tags=tags,
+            highlights=highlights,
+        )
+        if violations:
+            logger.warning(
+                f"文案不符合平台规则（platform={request.platform}）：{violations}"
+            )
+            raise HTTPException(
+                status_code=400,
+                detail="文案不符合目标平台规则：" + "；".join(violations),
+            )
+
+        # 3. 保存到数据库（写入平台字段，文案与平台绑定）
         async with AsyncSessionLocal() as session:
             script = Script(
                 house_id=request.house_id,
-                title=script_data["title"],
-                body=script_data["body"],
-                tags=json.dumps(script_data["tags"], ensure_ascii=False),
-                highlights=json.dumps(script_data.get("highlights", []), ensure_ascii=False),
+                title=title,
+                body=body,
+                tags=json.dumps(tags, ensure_ascii=False),
+                highlights=json.dumps(highlights, ensure_ascii=False),
                 template_style=request.template_style,
+                platform=request.platform,
             )
             
             session.add(script)

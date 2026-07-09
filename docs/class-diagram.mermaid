@@ -1,105 +1,72 @@
 classDiagram
-    direction TB
-
-    class WechatAccount {
-        +int id
-        +str name
-        +str app_id
-        +str app_secret_encrypted
-        +str remark
-        +bool is_active
-        +bool is_default
-        +datetime created_at
-        +datetime updated_at
-        +masked_app_id() str
+    class PlatformRules {
+        <<module: services/platform_rules.py>>
+        +PLATFORM_RULES: dict
+        +Platform : Enum(xiaohongshu, wechat)
+        +validate_script(platform, title, body, tags) list~str~
+        +count_title(title, platform) dict
     }
 
-    class PublishLog {
-        +int id
-        +int house_id
-        +int script_id
-        +str platform
-        +str status
-        +str error_msg
-        +str xhs_note_id
-        +str wechat_media_id
-        +int wechat_account_id
-        +datetime published_at
-        +datetime created_at
+    class ScriptGenerateRequest {
+        <<Pydantic>>
+        +house_id: int
+        +template_style: str
+        +platform: str  // 新增必填
+        +validate_platform()  // 校验枚举
+    }
+
+    class ScriptResponse {
+        <<Pydantic>>
+        +id: int
+        +house_id: int
+        +title: str
+        +body: str
+        +tags: list
+        +highlights: list
+        +platform: Optional~str~
+        +template_style: Optional~str~
+        +created_at: datetime
+    }
+
+    class Script {
+        <<ORM: models.py>>
+        +id: int
+        +house_id: int
+        +title: str
+        +body: str
+        +tags: str(JSON)
+        +highlights: str(JSON)
+        +platform: Optional~str~  // 复用，无需加列
+        +template_style: Optional~str~
+    }
+
+    class AIService {
+        +generate_script(house_id, template_style, platform) dict
+        -_build_prompt(house, template_style, platform) str
+        -_call_deepseek(prompt) str
+        -_parse_response(resp) dict
+    }
+
+    class ScriptRouter {
+        +generate_script(req) ScriptResponse
+        +get_script(id) ScriptResponse
+        +update_script(id, req) ScriptResponse
     }
 
     class WechatService {
-        -str appid
-        -str appsecret
-        +__init__(app_id, app_secret)
-        +create_draft(title, body, images, tags, highlights) dict
-        -_get_access_token() str
-        -_upload_thumb_image(access_token, image_path) str
-        -_upload_content_image(access_token, image_path) str
-        -_build_html_content(...) str
+        +create_draft(...)
+        -_truncate_title_by_bytes(title) str  // 最后防线
     }
 
-    class CryptoUtils {
-        +encrypt_secret(plaintext) str
-        +decrypt_secret(ciphertext) str
+    class XhsService {
+        +publish_note(...)
     }
 
-    class WechatAccountRouter {
-        +GET /wechat-accounts
-        +POST /wechat-accounts
-        +PUT /wechat-accounts/{id}
-        +DELETE /wechat-accounts/{id}
-        +POST /wechat-accounts/{id}/test
-        +seed_wechat_accounts_from_env()
-    }
-
-    class PublishRouter {
-        +POST /publish/wechat
-    }
-
-    class WechatAccountCreate {
-        +str name
-        +str app_id
-        +str app_secret
-        +str remark
-        +bool is_active
-        +bool is_default
-    }
-
-    class WechatAccountUpdate {
-        +str name
-        +str app_id
-        +str app_secret
-        +str remark
-        +bool is_active
-        +bool is_default
-    }
-
-    class WechatAccountResponse {
-        +int id
-        +str name
-        +str app_id_masked
-        +str remark
-        +bool is_active
-        +bool is_default
-        +datetime created_at
-        +datetime updated_at
-    }
-
-    class PublishRequest {
-        +int script_id
-        +list~str~ images
-        +int wechat_account_id
-    }
-
-    PublishLog "n" --> "0..1" WechatAccount : wechat_account_id
-    WechatAccountRouter ..> CryptoUtils : 加密/解密 AppSecret
-    WechatAccountRouter ..> WechatAccount : CRUD
-    PublishRouter ..> WechatAccount : 按 id/默认 查询
-    PublishRouter ..> CryptoUtils : decrypt_secret
-    PublishRouter ..> WechatService : 按账号构造实例
-    WechatService ..> CryptoUtils : 调用前解密
-    WechatAccountResponse ..> WechatAccount : from_attributes(脱敏)
-    WechatAccountCreate ..> WechatAccount : 新增
-    WechatAccountUpdate ..> WechatAccount : 更新
-    PublishRequest ..> PublishRouter : 请求体
+    ScriptRouter ..> AIService : 调用生成
+    ScriptRouter ..> Script : 持久化/读取
+    ScriptRouter ..> PlatformRules : 落库前校验
+    AIService ..> PlatformRules : 读取约束注入提示词
+    WechatService ..> PlatformRules : 引用标题/摘要/图片常量
+    XhsService ..> PlatformRules : 引用标题常量
+    ScriptResponse .. Script : ORM→DTO 映射
+    ScriptGenerateRequest ..> PlatformRules : 校验 platform 枚举

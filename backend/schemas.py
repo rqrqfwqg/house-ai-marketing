@@ -6,6 +6,8 @@ from datetime import datetime
 from typing import List, Optional
 from pydantic import BaseModel, Field, field_validator, ConfigDict
 
+from services.platform_rules import Platform, PLATFORM_RULES
+
 
 # ========== 房源相关Schemas ==========
 
@@ -65,9 +67,17 @@ class ScriptGenerateRequest(BaseModel):
     """
     文案生成请求Schema
     用于：请求AI生成文案
+
+    平台优先（Platform-First）约束：``platform`` 为必填字段，
+    取值须为 ``xiaohongshu`` / ``wechat``（与数据库 / 前端类型一致）。
+    未选平台将触发 422 校验失败，从源头杜绝「无平台」文案。
     """
     house_id: int = Field(..., description="房源ID")
     template_style: str = Field(default="professional", description="模板风格（professional/friendly/urgent）")
+    platform: str = Field(
+        ...,
+        description="目标发布平台（xiaohongshu / wechat），必填",
+    )
 
     @field_validator("template_style")
     def validate_template_style(cls, v):
@@ -75,6 +85,14 @@ class ScriptGenerateRequest(BaseModel):
         allowed = ["professional", "friendly", "urgent"]
         if v not in allowed:
             raise ValueError(f"模板风格必须是以下之一：{allowed}")
+        return v
+
+    @field_validator("platform")
+    def validate_platform(cls, v):
+        """校验目标平台是否合法（必须为 xiaohongshu / wechat）。"""
+        allowed = Platform.values()
+        if v not in allowed:
+            raise ValueError(f"platform 必须是以下之一：{allowed}")
         return v
 
 
