@@ -34,11 +34,31 @@ TOKEN_CACHE: dict[str, tuple[str, float]] = {}
 # 图片大小上限（2MB，微信素材接口限制）
 IMAGE_MAX_SIZE = 2 * 1024 * 1024
 
-# 微信图文标题最大长度
+# 微信图文标题最大长度（注意：微信按「字节」限制，64 字节；
+# 中文 UTF-8 占 3 字节，因此纯中文标题最多约 21 字）。
 WECHAT_TITLE_MAX_LEN = 64
 
-# 摘要最大长度
+# 摘要最大长度（微信按字符限制，120 字符）
 WECHAT_DIGEST_MAX_LEN = 120
+
+# 标题截断时附加的省略号（UTF-8 占 3 字节）
+WECHAT_TITLE_ELLIPSIS = "…"
+
+# 微信常见错误码 → 可读中文说明（参考 xhs_service._classify_error 的做法）
+WECHAT_ERROR_MESSAGES = {
+    40001: "微信公众号 access_token 无效或已过期，请检查 AppID/AppSecret 或重新授权",
+    40013: "微信公众号 AppID 无效，请检查「公众号配置」中的 AppID",
+    40014: "微信公众号 access_token 无效，请重新授权",
+    41001: "微信接口缺少必要参数，请检查请求后重试",
+    42001: "微信公众号 access_token 已过期，请稍后重试",
+    45003: "标题长度超出微信限制（最多 64 字节，约 21 个中文），已自动截断仍超限，请缩短标题后重试",
+    45009: "公众号接口调用频次超限，请稍后重试",
+    48001: "公众号未开通该接口权限，请确认账号已完成微信认证",
+    48004: "公众号未认证，无权限调用该接口，请先完成微信认证",
+    50001: "公众号未获得该接口的权限",
+    50002: "用户未授权该 API 权限",
+    61023: "请确认公众号已成功授权",
+}
 
 
 class WechatService:
@@ -329,6 +349,86 @@ class WechatService:
         return text
 
     # ------------------------------------------------------------------
+    # 标题/错误工具
+    # ------------------------------------------------------------------
+    def _truncate_title_by_bytes(
+        self, title: str, max_bytes: int = WECHAT_TITLE_MAX_LEN
+    ) -> str:
+        """
+        按 UTF-8 字节长度安全截断标题，避免把多字节字符切断。
+
+        微信图文 ``title`` 字段限制为 64 **字节**（中文 UTF-8 占 3 字节），
+        因此纯中文标题最多约 21 字。原先按字符数 ``title[:64]`` 截断会得到 64 个中文字
+        （192 字节），远超限制，触发 ``45003 title size out of limit``。
+
+        本方法按字节截断，并在超出时附加省略号「…」（3 字节），保证结果严格
+        ≤ max_bytes 字节且不以残缺的多字节字符结尾。
+
+        Args:
+            title: 原始标题。
+            max_bytes: 最大字节数（默认 ``WECHAT_TITLE_MAX_LEN``=64）。
+
+        Returns:
+            截断后的安全标题；为空时回退为「无标题」。
+        """
+        fallback = "无标题"
+        if not title:
+            return fallback
+        title = title.strip()
+        if not title:
+            return fallback
+
+        encoded = title.encode("utf-8")
+        if len(encoded) <= max_bytes:
+            return title
+
+        # 需要截断：预留省略号（…，UTF-8 占 3 字节）的空间
+        ellipsis = WECHAT_TITLE_ELLIPSIS
+        ellipsis_bytes = len(ellipsis.encode("utf-8"))
+        budget = max(0, max_bytes - ellipsis_bytes)
+
+        truncated_chars: List[str] = []
+        used = 0
+        for ch in title:
+            ch_bytes = len(ch.encode("utf-8"))
+            if used + ch_bytes > budget:
+                break
+            truncated_chars.append(ch)
+            used += ch_bytes
+        return "".join(truncated_chars) + ellipsis
+
+    def _classify_wechat_error(self, errcode: Any, errmsg: str) -> str:
+        """
+        将微信接口返回的错误码翻译为可读的中文提示。
+
+        参考 ``xhs_service._classify_error`` 的做法：对已知错误码提供友好说明，
+        未知错误则保留原始 errmsg（并剔除 ``hint``/``rid`` 等内部调试串）便于排查，
+        避免把裸错误码（如 45003）直接暴露给用户。
+
+        Args:
+            errcode: 微信返回的错误码（可能为 None / 字符串 / 数字）。
+            errmsg: 微信返回的原始错误信息。
+
+        Returns:
+            清晰可读的中文错误描述。
+        """
+        try:
+            code = int(errcode) if errcode is not None else 0
+        except (TypeError, ValueError):
+            code = 0
+
+        if code in WECHAT_ERROR_MESSAGES:
+            return WECHAT_ERROR_MESSAGES[code]
+
+        # 未知错误：剔除内部调试信息（hint / rid），保留可读部分
+        raw = (errmsg or "未知错误").strip()
+        # errmsg 形如 "title size out of limit hint: [...] rid: ..."
+        cleaned = raw.split("hint")[0].strip().rstrip(":").strip()
+        if not cleaned:
+            cleaned = raw
+        return f"微信接口返回错误（错误码 {code}）：{cleaned}"
+
+    # ------------------------------------------------------------------
     # 主流程
     # ------------------------------------------------------------------
     async def create_draft(
@@ -416,7 +516,7 @@ class WechatService:
             payload = {
                 "articles": [
                     {
-                        "title": (title or "无标题")[:WECHAT_TITLE_MAX_LEN],
+                        "title": self._truncate_title_by_bytes(title),
                         "author": "房屋推荐",
                         "digest": digest,
                         "content": html_content,
@@ -436,7 +536,8 @@ class WechatService:
             if "media_id" not in data:
                 errcode = data.get("errcode")
                 errmsg = data.get("errmsg", "未知错误")
-                raise RuntimeError(f"创建草稿失败：[{errcode}] {errmsg}")
+                readable = self._classify_wechat_error(errcode, errmsg)
+                raise RuntimeError(readable)
 
             draft_media_id = data["media_id"]
             logger.info(f"公众号草稿创建成功：media_id={draft_media_id}")
