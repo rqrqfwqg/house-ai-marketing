@@ -21,6 +21,8 @@ export default defineConfig(({ mode }) => {
         '/uploads': {
           target: 'http://localhost:8902',
           changeOrigin: true,
+          // 开发期后端挂在 /house-ai/uploads，重写命中真实路径
+          rewrite: (p: string) => `/house-ai${p}`,
         },
         // 生产命名空间下的上传路径（对应后端 /house-ai/uploads）
         '/house-ai/uploads': {

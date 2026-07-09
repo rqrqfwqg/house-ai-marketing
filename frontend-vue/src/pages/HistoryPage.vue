@@ -159,6 +159,7 @@ import { getScripts } from '@/api/script'
 import { getPublishLogs } from '@/api/publish'
 import type { House, Script, PublishLog, TemplateStyle } from '@/types'
 import { TEMPLATE_STYLES } from '@/types'
+import { resolveImageUrl } from '@/utils/imageUrl'
 
 const router = useRouter()
 
@@ -207,20 +208,6 @@ function houseScripts(houseId: number): Script[] {
  */
 function housePublishLogs(houseId: number): PublishLog[] {
   return allPublishLogs.value.filter((l) => l.house_id === houseId)
-}
-
-/**
- * 处理图片 URL（可能是相对路径或完整 URL）
- */
-function resolveImageUrl(img: string): string {
-  if (img.startsWith('http://') || img.startsWith('https://') || img.startsWith('data:')) {
-    return img
-  }
-  // 图片路径（如 /uploads/...）直接使用，Vite 代理已配置
-  if (img.startsWith('/')) {
-    return img
-  }
-  return `/${img}`
 }
 
 function styleLabel(style?: string): string {

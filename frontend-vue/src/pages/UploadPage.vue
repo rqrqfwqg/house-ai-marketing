@@ -93,6 +93,11 @@
             clearable
           />
         </el-form-item>
+
+        <el-form-item label="压缩质量">
+          <el-slider v-model="compressQuality" :min="0.5" :max="0.9" :step="0.05" show-input />
+          <span class="hint">上传前自动压缩图片（长边≤1920px），节省服务器空间与流量</span>
+        </el-form-item>
       </el-form>
     </el-card>
 
@@ -114,9 +119,10 @@
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, type FormInstance } from 'element-plus'
+import { ElMessage, ElLoading, type FormInstance } from 'element-plus'
 import ImageUploader from '@/components/ImageUploader.vue'
 import { uploadHouse } from '@/api/house'
+import { compressImage } from '@/utils/imageCompress'
 import type { HouseCreate } from '@/types'
 
 const router = useRouter()
@@ -126,6 +132,8 @@ const submitting = ref(false)
 const selectedFiles = ref<File[]>([])
 const tagsInput = ref('')
 const highlightsInput = ref('')
+// 上传前客户端压缩质量（JPEG 0.5~0.9，默认 0.8）
+const compressQuality = ref(0.8)
 
 const houseForm = reactive<HouseCreate>({
   title: '',
@@ -162,15 +170,30 @@ async function handleSubmit(): Promise<void> {
   houseForm.highlights = highlights
 
   submitting.value = true
+  const quality = compressQuality.value // 0.5~0.9，默认 0.8
+  const loading = ElLoading.service({ text: '正在压缩图片…', fullscreen: true })
   try {
-    const res = await uploadHouse(selectedFiles.value, { ...houseForm })
-    ElMessage.success('房源上传成功！')
+    const before = selectedFiles.value.reduce((s, f) => s + f.size, 0)
+    // 逐张压缩（canvas，长边≤1920px，输出 JPEG）；单张失败则回退原图，保证可用
+    const compressed = await Promise.all(
+      selectedFiles.value.map((f) => compressImage(f, { quality }).catch(() => f))
+    )
+    const after = compressed.reduce((s, f) => s + f.size, 0)
+    loading.close()
+    const res = await uploadHouse(compressed, { ...houseForm })
+    const savedMb = (before - after) / 1024 / 1024
+    ElMessage.success(
+      savedMb > 0.01
+        ? `上传成功！本次压缩节省 ${savedMb.toFixed(1)} MB`
+        : '房源上传成功！'
+    )
     // 跳转到生成文案页面
     router.push({
       path: '/generate',
       query: { house_id: res.id },
     })
   } catch (error: any) {
+    loading.close()
     const msg =
       error?.response?.data?.detail ||
       error?.response?.data?.message ||
@@ -200,6 +223,12 @@ async function handleSubmit(): Promise<void> {
 
 .form-row-item {
   flex: 1;
+}
+
+.hint {
+  font-size: 12px;
+  color: #909399;
+  margin-left: 12px;
 }
 
 .submit-area {
