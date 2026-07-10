@@ -9,6 +9,7 @@
 4. 构建 HTML 正文
 5. 调用 draft/add 新建草稿
 """
+import io
 import os
 import re
 import time
@@ -18,6 +19,7 @@ from pathlib import Path
 
 import httpx
 from loguru import logger
+from PIL import Image
 
 from config import settings
 from services.platform_rules import PLATFORM_RULES, Platform, truncate_title
@@ -44,6 +46,12 @@ _WECHAT_RULE = PLATFORM_RULES[Platform.WECHAT.value]
 
 # 图片大小上限（2MB，微信素材接口限制）
 IMAGE_MAX_SIZE = _WECHAT_RULE.image_max_bytes
+
+# 上传前压缩目标上限（在微信接口硬限制内预留安全余量，避免卡在临界点被再次拒收）：
+# - 封面图走 material/add_material（微信限制 2MB）→ 目标 ~1.9MB
+# - 正文图走 media/uploadimg（微信限制 1MB）→ 目标 ~0.95MB
+WECHAT_THUMB_MAX_BYTES = int(IMAGE_MAX_SIZE * 0.95)
+WECHAT_CONTENT_MAX_BYTES = 950_000
 
 # 微信图文标题最大长度（注意：微信按「字节」限制，64 字节；
 # 中文 UTF-8 占 3 字节，因此纯中文标题最多约 21 字）。
@@ -164,34 +172,142 @@ class WechatService:
 
     def _check_image(self, image_path: str) -> None:
         """
-        校验图片文件是否存在且大小合规。
+        校验图片文件是否存在。
+
+        注意：尺寸超限不再在此处硬拒，改由 ``_read_image_bytes`` 在上传前
+        自动压缩到微信限制内（见 ``_compress_image_bytes``），避免房源手机
+        直出大图（常 >2MB）直接创建草稿失败。
 
         Raises:
             FileNotFoundError: 文件不存在。
-            ValueError: 文件大小超过 2MB 限制。
         """
         path = Path(image_path)
         if not path.is_file():
             raise FileNotFoundError(f"图片文件不存在：{image_path}")
-        size = path.stat().st_size
-        if size > IMAGE_MAX_SIZE:
-            raise ValueError(
-                f"图片 {path.name} 大小 {size / 1024 / 1024:.2f}MB 超过微信限制 2MB"
+
+    def _compress_image_bytes(self, image_path: str, max_bytes: int) -> bytes:
+        """
+        将图片压缩到不超过 ``max_bytes`` 后返回内存中的字节。
+
+        绝不改写磁盘上的原图文件，仅返回内存中的压缩字节，保证原图零损质、零副作用。
+
+        压缩策略（防御性与不损质兼顾，对应微信大图 Bug 修复）：
+        1. 若原图字节已 ≤ max_bytes，直接返回原字节（不压缩、不损质、无额外 IO）；
+        2. 否则用 ``PIL.Image`` 打开并统一转 RGB，先按最长边 ≤ 1280px 等比缩放，
+           再以 JPEG 保存并逐步下调 ``quality``（从 85 起，步进 5）直到字节 ≤ max_bytes；
+        3. 若 ``quality`` 降到下限（20）仍超限，则进一步缩小最长边（每次 ×0.8）重试；
+        4. 极端情况（极小尺寸仍超限，几乎不可能）则抛出 ``ValueError``，
+           附带路径与极限大小，便于排查。
+
+        Args:
+            image_path: 原图绝对路径。
+            max_bytes: 目标字节上限（封面 ~1.9MB / 正文 ~0.95MB 等）。
+
+        Returns:
+            压缩后的 JPEG 字节；原图已达标时返回原样字节。
+
+        Raises:
+            ValueError: 压缩后仍超过 max_bytes（极端情况）。
+            FileNotFoundError: 图片不存在（由 ``Image.open`` 抛出）。
+        """
+        path = Path(image_path)
+        original = path.read_bytes()
+
+        # 1. 已达标直接返回，零损质、零额外 CPU/IO
+        if len(original) <= max_bytes:
+            return original
+
+        # 2. 打开并统一为 RGB（JPEG 不支持透明通道 / 调色板）
+        img = Image.open(image_path)
+        img = img.convert("RGB")
+
+        # 压缩参数（集中定义，便于调参）
+        COMPRESS_MAX_EDGE = 1280       # 最长边目标像素
+        COMPRESS_MIN_EDGE = 160        # 最小边长下限，避免无限缩小
+        COMPRESS_QUALITY_START = 85    # 起始质量
+        COMPRESS_QUALITY_STEP = 5      # 质量下调步进
+        COMPRESS_QUALITY_MIN = 20      # 质量下限
+
+        def _resize_to_edge(edge: int) -> None:
+            """将图片最长边等比缩放到 ``edge`` 像素以内（原地修改）。"""
+            w, h = img.size
+            longest = max(w, h)
+            if longest <= edge:
+                return
+            scale = edge / float(longest)
+            img.thumbnail(
+                (max(1, int(w * scale)), max(1, int(h * scale))),
+                Image.LANCZOS,
             )
 
-    def _read_image_bytes(self, image_path: str) -> Tuple[str, bytes, str]:
+        # 先按默认最长边缩放
+        edge = COMPRESS_MAX_EDGE
+        _resize_to_edge(edge)
+
+        quality = COMPRESS_QUALITY_START
+        buf = io.BytesIO()
+        while True:
+            buf.seek(0)
+            buf.truncate(0)
+            img.save(buf, format="JPEG", quality=quality, optimize=True)
+            data = buf.getvalue()
+            if len(data) <= max_bytes:
+                return data
+
+            if quality > COMPRESS_QUALITY_MIN:
+                # 仅下调质量，尺寸不变，再次尝试
+                quality -= COMPRESS_QUALITY_STEP
+                continue
+
+            # quality 已到下限仍超限：缩小尺寸后再从高质量尝试
+            new_edge = int(edge * 0.8)
+            if new_edge < COMPRESS_MIN_EDGE:
+                raise ValueError(
+                    f"图片 {path.name} 压缩后仍超过限制：极限尺寸 {edge}px、"
+                    f"质量 {COMPRESS_QUALITY_MIN} 时 {len(data)} 字节 "
+                    f"> 目标 {max_bytes} 字节"
+                )
+            edge = new_edge
+            _resize_to_edge(edge)
+            quality = COMPRESS_QUALITY_START
+
+    def _read_image_bytes(
+        self, image_path: str, max_bytes: Optional[int] = None
+    ) -> Tuple[str, bytes, str]:
         """
         读取图片字节并返回上传所需三元组。
 
+        若传入 ``max_bytes``，则对超过该上限的图片自动压缩到限制内
+        （封面图传 ``WECHAT_THUMB_MAX_BYTES``、正文图传 ``WECHAT_CONTENT_MAX_BYTES``，
+        为微信 2MB / 1MB 接口预留安全余量），压缩后仅在仍超限时才抛出 ``ValueError``；
+        原图文件绝不被改写。未传 ``max_bytes`` 时原样返回（向后兼容）。
+
+        Args:
+            image_path: 图片绝对路径。
+            max_bytes: 可选字节上限；为 ``None`` 时不做压缩，原样返回。
+
         Returns:
             (filename, file_bytes, content_type)
+
+        Raises:
+            FileNotFoundError: 文件不存在。
+            ValueError: 压缩后仍超过 max_bytes（极端情况）。
         """
-        self._check_image(image_path)
+        self._check_image(image_path)  # 仍保留文件存在性校验
         filename = os.path.basename(image_path)
         content_type = self._guess_content_type(image_path)
         with open(image_path, "rb") as f:
             file_bytes = f.read()
-        return filename, file_bytes, content_type
+
+        # 未超上限：原样返回（不压缩、不损质）
+        if max_bytes is None or len(file_bytes) <= max_bytes:
+            return filename, file_bytes, content_type
+
+        # 超过上限 -> 压缩到限制内。压缩输出统一为 JPEG，
+        # 因此文件名换 .jpg、content_type 改为 image/jpeg，避免字节/MIME 不一致。
+        compressed = self._compress_image_bytes(image_path, max_bytes)
+        base, _ = os.path.splitext(filename)
+        return f"{base}.jpg", compressed, "image/jpeg"
 
     async def _upload_thumb_image(self, access_token: str, image_path: str) -> str:
         """
@@ -207,7 +323,9 @@ class WechatService:
         Raises:
             RuntimeError: 上传失败或微信返回错误。
         """
-        filename, file_bytes, content_type = self._read_image_bytes(image_path)
+        filename, file_bytes, content_type = self._read_image_bytes(
+            image_path, max_bytes=WECHAT_THUMB_MAX_BYTES
+        )
         url = f"{WECHAT_API_BASE}/material/add_material"
         params = {"access_token": access_token, "type": "image"}
 
@@ -242,7 +360,9 @@ class WechatService:
         Raises:
             RuntimeError: 上传失败或微信返回错误。
         """
-        filename, file_bytes, content_type = self._read_image_bytes(image_path)
+        filename, file_bytes, content_type = self._read_image_bytes(
+            image_path, max_bytes=WECHAT_CONTENT_MAX_BYTES
+        )
         url = f"{WECHAT_API_BASE}/media/uploadimg"
         params = {"access_token": access_token}
 
