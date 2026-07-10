@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     IMAGE_RETENTION_DAYS: int = 7  # 图片保留天数（超过自动清理）
     MAX_IMAGE_SIZE: int = 10 * 1024 * 1024  # 单张图片最大10MB
     ALLOWED_IMAGE_TYPES: list = ["image/jpeg", "image/png", "image/webp"]  # 允许的图片格式
+
+    # 上传房源照片在落盘前统一压缩的目标上限（500KB）。
+    # 先按 MAX_IMAGE_SIZE(10MB) 拦截超大文件，再在此处无损判断 + 有损压缩到 500KB 以内，
+    # 避免磁盘堆积大图、并兼顾前端加载与微信等下游平台的尺寸约束。
+    UPLOAD_IMAGE_MAX_BYTES: int = 500 * 1024  # 上传图片落盘前压缩目标（500KB）
     
     # ========== 数据库配置 ==========
     DATABASE_URL: str = "sqlite+aiosqlite:///./house_ai.db"  # SQLite数据库路径

@@ -3,6 +3,7 @@
 负责：图片保存、路径生成、过期文件清理
 """
 import os
+import mimetypes
 import time
 from datetime import datetime, timedelta
 from typing import List, Optional
@@ -10,6 +11,13 @@ from pathlib import Path
 from loguru import logger
 
 from config import settings
+from services.image_utils import compress_image_bytes_data
+
+
+# 允许的图片扩展名（用于判断是否需要对上传文件做压缩降质）。
+# 优先按扩展名判断（覆盖 mimetypes 可能不识别的 .webp 等），
+# 并以 settings.ALLOWED_IMAGE_TYPES 兜底，保证与上传校验口径一致。
+_IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff"}
 
 
 class StorageService:
@@ -49,11 +57,15 @@ class StorageService:
                 save_dir = self.upload_dir / "temp"
             
             save_dir.mkdir(parents=True, exist_ok=True)
-            
+
+            # 落盘前压缩：图片按配置目标压缩到 UPLOAD_IMAGE_MAX_BYTES 以内，
+            # 非图片（如 .txt 等）原样写回，不做任何压缩。
+            write_data = self._prepare_write_bytes(file_data, filename)
+
             # 保存文件
             file_path = save_dir / new_filename
             with open(file_path, "wb") as f:
-                f.write(file_data)
+                f.write(write_data)
             
             # 返回相对路径（用于数据库存储和前端访问）
             relative_path = f"/uploads/{house_id}/{new_filename}" if house_id else f"/uploads/temp/{new_filename}"
@@ -137,6 +149,70 @@ class StorageService:
             logger.error(f"清理过期文件失败：{str(e)}")
             return 0
     
+    def _is_image_filename(self, filename: str) -> bool:
+        """
+        按扩展名（或 mimetypes 推断的 MIME）判断文件是否为图片。
+
+        优先用扩展名匹配（覆盖 mimetypes 可能不识别的 .webp 等常见图片格式），
+        再用 ``settings.ALLOWED_IMAGE_TYPES`` 兜底，保证与上传路由的校验口径一致。
+
+        Args:
+            filename: 原始文件名。
+
+        Returns:
+            是否为图片文件。
+        """
+        ext = os.path.splitext(filename)[1].lower()
+        if ext in _IMAGE_EXTENSIONS:
+            return True
+        content_type, _ = mimetypes.guess_type(filename)
+        return content_type in settings.ALLOWED_IMAGE_TYPES
+
+    def _prepare_write_bytes(self, file_data: bytes, filename: str) -> bytes:
+        """
+        落盘前处理：返回最终写盘字节。
+
+        规则（最佳实践，绝不因压缩失败拒绝整次上传）：
+        - 非图片：原样返回（不压缩、不改动）。
+        - 图片且已 ≤ ``UPLOAD_IMAGE_MAX_BYTES``：原样返回（不重新编码、不损质）。
+        - 图片且超限：调用 ``compress_image_bytes_data`` 压缩到 ≤ 目标；
+          极端情况下压缩后仍超限也保留最佳压缩结果并 ``logger.warning`` 提示，
+          不抛异常（丢了照片比略大更糟）。
+
+        Args:
+            file_data: 原始文件二进制数据。
+            filename: 原始文件名（用于判断是否为图片）。
+
+        Returns:
+            用于落盘的最终字节（压缩后或原样）。
+        """
+        # 非图片直接透传，避免对二进制文档等做无意义的图片压缩
+        if not self._is_image_filename(filename):
+            return file_data
+
+        max_bytes = settings.UPLOAD_IMAGE_MAX_BYTES
+
+        # 已达标：零损质、零额外 CPU/IO（关键：不重新编码，避免无故损质）
+        if len(file_data) <= max_bytes:
+            return file_data
+
+        try:
+            compressed = compress_image_bytes_data(file_data, max_bytes)
+        except ValueError as exc:
+            # 极端情况（已缩到最小尺寸仍超限，几乎不可能）：退化为原图落盘，
+            # 不丢照片，并告警便于排查。
+            logger.warning(f"图片压缩未达标，仍按原图落盘：{filename} - {exc}")
+            return file_data
+
+        # 压缩后（或原图）仍 > 目标（极少见）：仍写压缩后的最佳结果并告警，
+        # 不因此拒绝整次上传。
+        if len(compressed) > max_bytes:
+            logger.warning(
+                f"图片压缩后仍 > {max_bytes} 字节（{len(compressed)} 字节），"
+                f"仍按压缩结果落盘：{filename}"
+            )
+        return compressed
+
     def _sanitize_filename(self, filename: str) -> str:
         """
         清理文件名（移除非法字符）

@@ -9,7 +9,6 @@
 4. 构建 HTML 正文
 5. 调用 draft/add 新建草稿
 """
-import io
 import os
 import re
 import time
@@ -19,9 +18,9 @@ from pathlib import Path
 
 import httpx
 from loguru import logger
-from PIL import Image
 
 from config import settings
+from services.image_utils import compress_image_bytes
 from services.platform_rules import PLATFORM_RULES, Platform, truncate_title
 
 
@@ -189,15 +188,16 @@ class WechatService:
         """
         将图片压缩到不超过 ``max_bytes`` 后返回内存中的字节。
 
-        绝不改写磁盘上的原图文件，仅返回内存中的压缩字节，保证原图零损质、零副作用。
+        薄封装：委托 ``services.image_utils.compress_image_bytes``（单一真源），
+        压缩策略、返回值与异常行为与原实现完全一致，保证既有用例不回归：
 
-        压缩策略（防御性与不损质兼顾，对应微信大图 Bug 修复）：
         1. 若原图字节已 ≤ max_bytes，直接返回原字节（不压缩、不损质、无额外 IO）；
-        2. 否则用 ``PIL.Image`` 打开并统一转 RGB，先按最长边 ≤ 1280px 等比缩放，
-           再以 JPEG 保存并逐步下调 ``quality``（从 85 起，步进 5）直到字节 ≤ max_bytes；
-        3. 若 ``quality`` 降到下限（20）仍超限，则进一步缩小最长边（每次 ×0.8）重试；
-        4. 极端情况（极小尺寸仍超限，几乎不可能）则抛出 ``ValueError``，
-           附带路径与极限大小，便于排查。
+        2. 否则在内存中用 PIL 转 RGB、按最长边 ≤ 1280px 等比缩放，并以 JPEG 逐步
+           下调 quality（从 85 起，步进 5）直到字节 ≤ max_bytes；
+        3. 若 quality 降到下限（20）仍超限，则进一步缩小最长边（每次 ×0.8）重试；
+        4. 极端情况抛出 ``ValueError``（极小尺寸仍超限，几乎不可能）。
+
+        绝不改写磁盘上的原图文件，仅返回内存中的压缩字节，保证原图零损质、零副作用。
 
         Args:
             image_path: 原图绝对路径。
@@ -208,68 +208,9 @@ class WechatService:
 
         Raises:
             ValueError: 压缩后仍超过 max_bytes（极端情况）。
-            FileNotFoundError: 图片不存在（由 ``Image.open`` 抛出）。
+            FileNotFoundError: 图片不存在（由底层 ``open`` 抛出）。
         """
-        path = Path(image_path)
-        original = path.read_bytes()
-
-        # 1. 已达标直接返回，零损质、零额外 CPU/IO
-        if len(original) <= max_bytes:
-            return original
-
-        # 2. 打开并统一为 RGB（JPEG 不支持透明通道 / 调色板）
-        img = Image.open(image_path)
-        img = img.convert("RGB")
-
-        # 压缩参数（集中定义，便于调参）
-        COMPRESS_MAX_EDGE = 1280       # 最长边目标像素
-        COMPRESS_MIN_EDGE = 160        # 最小边长下限，避免无限缩小
-        COMPRESS_QUALITY_START = 85    # 起始质量
-        COMPRESS_QUALITY_STEP = 5      # 质量下调步进
-        COMPRESS_QUALITY_MIN = 20      # 质量下限
-
-        def _resize_to_edge(edge: int) -> None:
-            """将图片最长边等比缩放到 ``edge`` 像素以内（原地修改）。"""
-            w, h = img.size
-            longest = max(w, h)
-            if longest <= edge:
-                return
-            scale = edge / float(longest)
-            img.thumbnail(
-                (max(1, int(w * scale)), max(1, int(h * scale))),
-                Image.LANCZOS,
-            )
-
-        # 先按默认最长边缩放
-        edge = COMPRESS_MAX_EDGE
-        _resize_to_edge(edge)
-
-        quality = COMPRESS_QUALITY_START
-        buf = io.BytesIO()
-        while True:
-            buf.seek(0)
-            buf.truncate(0)
-            img.save(buf, format="JPEG", quality=quality, optimize=True)
-            data = buf.getvalue()
-            if len(data) <= max_bytes:
-                return data
-
-            if quality > COMPRESS_QUALITY_MIN:
-                # 仅下调质量，尺寸不变，再次尝试
-                quality -= COMPRESS_QUALITY_STEP
-                continue
-
-            # quality 已到下限仍超限：缩小尺寸后再从高质量尝试
-            new_edge = int(edge * 0.8)
-            if new_edge < COMPRESS_MIN_EDGE:
-                raise ValueError(
-                    f"图片 {path.name} 压缩后仍超过限制：极限尺寸 {edge}px、"
-                    f"质量 {COMPRESS_QUALITY_MIN} 时 {len(data)} 字节 "
-                    f"> 目标 {max_bytes} 字节"
-                )
-            edge = new_edge
-            _resize_to_edge(edge)
-            quality = COMPRESS_QUALITY_START
+        return compress_image_bytes(image_path, max_bytes)
 
     def _read_image_bytes(
         self, image_path: str, max_bytes: Optional[int] = None
