@@ -16,7 +16,7 @@ from schemas import (
     ScriptListResponse,
 )
 from services.ai_service import ai_service
-from services.platform_rules import validate_script
+from services.platform_rules import validate_script, truncate_title, Platform
 from models import Script
 from database import AsyncSessionLocal
 
@@ -179,7 +179,13 @@ async def update_script(
             
             # 更新字段
             if request.title is not None:
-                script.title = request.title
+                # 标题按平台约束截断兜底，与 generate 路由的 validate_script 形成双保险：
+                # 手动改出超长标题时在此即截断（优先截断而非 400，避免破坏编辑体验），
+                # 保证落库标题始终不超过平台上限，推送端不再依赖单点截断防御 45003。
+                new_title = request.title
+                if script.platform and Platform.is_valid(script.platform):
+                    new_title = truncate_title(new_title, script.platform)
+                script.title = new_title
             if request.body is not None:
                 script.body = request.body
             if request.tags is not None:

@@ -177,6 +177,70 @@ def count_title(title: str, platform: str) -> Dict[str, Any]:
     }
 
 
+def truncate_title(
+    title: str,
+    platform: str,
+    max_bytes: Optional[int] = None,
+) -> str:
+    """
+    按平台口径安全截断标题，保证结果不超过平台上限。
+
+    - 微信（``byte`` 口径）：按 UTF-8 字节截断，超出时附加省略号「…」（3 字节），
+      结果严格 ≤ 上限字节，且不切断多字节字符（避免残缺 emoji / 中文）。
+    - 小红书（``char`` 口径）：按字符截断，结果 ≤ 上限字符。
+
+    空 / 空白标题回退为「无标题」，保证下游一定有合法标题。
+
+    本函数是标题截断的**唯一真源**：推送端 ``wechat_service`` 的
+    ``_truncate_title_by_bytes`` 与小红书端均在此收敛，消除重复实现漂移。
+
+    Args:
+        title: 原始标题。
+        platform: 平台字符串（xiaohongshu / wechat）。
+        max_bytes: 仅测试 / 调试用，覆盖字节上限；为 ``None`` 时取规则默认值。
+
+    Returns:
+        截断后的安全标题；不会超过平台上限。
+
+    Raises:
+        ValueError: 平台值非法。
+    """
+    if not title:
+        return "无标题"
+    title = title.strip()
+    if not title:
+        return "无标题"
+
+    rule = _resolve_rule(platform)
+
+    if rule.title_unit == "byte":
+        limit = max_bytes if max_bytes is not None else rule.title_max
+        encoded = title.encode("utf-8")
+        if len(encoded) <= limit:
+            return title
+
+        # 需要截断：预留省略号（…，UTF-8 占 3 字节）的空间，避免切断多字节字符
+        ellipsis = "…"
+        ellipsis_bytes = len(ellipsis.encode("utf-8"))
+        budget = max(0, limit - ellipsis_bytes)
+
+        out: List[str] = []
+        used = 0
+        for ch in title:
+            ch_bytes = len(ch.encode("utf-8"))
+            if used + ch_bytes > budget:
+                break
+            out.append(ch)
+            used += ch_bytes
+        return "".join(out) + ellipsis
+
+    # 字符口径（小红书）：直接按字符截断（与 xhs_service 现有行为一致）
+    limit = rule.title_max
+    if len(title) <= limit:
+        return title
+    return title[:limit]
+
+
 def count_body(body: str, platform: str) -> Dict[str, Any]:
     """
     统计正文字符长度，按字符计量（与小红书正文口径一致）。

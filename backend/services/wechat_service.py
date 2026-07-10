@@ -20,7 +20,7 @@ import httpx
 from loguru import logger
 
 from config import settings
-from services.platform_rules import PLATFORM_RULES, Platform
+from services.platform_rules import PLATFORM_RULES, Platform, truncate_title
 
 
 # 微信公众号 API 基础地址
@@ -356,7 +356,9 @@ class WechatService:
                 text = text[: idx + 1]
                 break
         if len(text) > max_len:
-            text = text[:max_len] + "..."
+            # 为省略号预留 3 字符空间，保证整体不超过微信摘要上限（120 字符），
+            # 避免触发 45004（digest size out of limit）等价校验。
+            text = text[: max(0, max_len - 3)] + "..."
         return text
 
     # ------------------------------------------------------------------
@@ -375,6 +377,10 @@ class WechatService:
         本方法按字节截断，并在超出时附加省略号「…」（3 字节），保证结果严格
         ≤ max_bytes 字节且不以残缺的多字节字符结尾。
 
+        Note:
+            截断逻辑已收敛到平台唯一真源 ``platform_rules.truncate_title``
+            （微信 byte 口径），本方法仅做薄封装，便于既有调用与测试复用。
+
         Args:
             title: 原始标题。
             max_bytes: 最大字节数（默认 ``WECHAT_TITLE_MAX_LEN``=64）。
@@ -382,31 +388,7 @@ class WechatService:
         Returns:
             截断后的安全标题；为空时回退为「无标题」。
         """
-        fallback = "无标题"
-        if not title:
-            return fallback
-        title = title.strip()
-        if not title:
-            return fallback
-
-        encoded = title.encode("utf-8")
-        if len(encoded) <= max_bytes:
-            return title
-
-        # 需要截断：预留省略号（…，UTF-8 占 3 字节）的空间
-        ellipsis = WECHAT_TITLE_ELLIPSIS
-        ellipsis_bytes = len(ellipsis.encode("utf-8"))
-        budget = max(0, max_bytes - ellipsis_bytes)
-
-        truncated_chars: List[str] = []
-        used = 0
-        for ch in title:
-            ch_bytes = len(ch.encode("utf-8"))
-            if used + ch_bytes > budget:
-                break
-            truncated_chars.append(ch)
-            used += ch_bytes
-        return "".join(truncated_chars) + ellipsis
+        return truncate_title(title, Platform.WECHAT.value, max_bytes=max_bytes)
 
     def _classify_wechat_error(self, errcode: Any, errmsg: str) -> str:
         """
@@ -536,8 +518,20 @@ class WechatService:
                 image_urls=content_image_urls,
             )
 
-            # 摘要
+            # 摘要（已按微信 120 字符上限兜底截断）
             digest = self._build_digest(body)
+
+            # 标题按字节安全截断（微信上限 64 字节），并断言发送值即为截断后的值，
+            # 一旦未来有人改动导致截断失效，这里会立刻暴露而非把超长标题发往微信。
+            safe_title = self._truncate_title_by_bytes(title)
+            safe_title_bytes = len(safe_title.encode("utf-8"))
+            assert safe_title_bytes <= WECHAT_TITLE_MAX_LEN, (
+                f"标题截断后仍超微信字节上限：{safe_title_bytes} > {WECHAT_TITLE_MAX_LEN}"
+            )
+            logger.info(
+                f"公众号草稿标题处理：原始 {len((title or '').encode('utf-8'))} 字节 "
+                f"→ 发送 {safe_title_bytes} 字节"
+            )
 
             # 7. 新建草稿
             url = f"{WECHAT_API_BASE}/draft/add"
@@ -545,7 +539,7 @@ class WechatService:
             payload = {
                 "articles": [
                     {
-                        "title": self._truncate_title_by_bytes(title),
+                        "title": safe_title,
                         "author": "房屋推荐",
                         "digest": digest,
                         "content": html_content,
